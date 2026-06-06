@@ -1,12 +1,8 @@
-mod cli;
-mod git;
-mod providers;
-mod stack;
-
 use anyhow::Result;
 use clap::Parser;
+use git_stack::{cli, providers, stack};
 
-use crate::cli::{Cli, Command};
+use git_stack::cli::{Cli, Command};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();

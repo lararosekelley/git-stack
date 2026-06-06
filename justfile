@@ -17,6 +17,18 @@ build:
 clean:
     cargo clean
 
+# Generate shell completions and man pages
+generate-assets:
+    cargo run --features generate --bin git-stack-generate -- all target/generated
+
+# Generate shell completions
+generate-completions:
+    cargo run --features generate --bin git-stack-generate -- completions target/generated/completions
+
+# Generate man pages
+generate-man:
+    cargo run --features generate --bin git-stack-generate -- man target/generated/man
+
 # Testing
 # -------
 

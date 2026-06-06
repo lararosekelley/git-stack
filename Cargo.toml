@@ -24,7 +24,17 @@ exclude = [
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.53", features = ["derive"] }
+clap_complete = { version = "4.5.61", optional = true }
+clap_mangen = { version = "0.2.29", optional = true }
 serde_json = "1.0.150"
+
+[features]
+generate = ["dep:clap_complete", "dep:clap_mangen"]
+
+[[bin]]
+name = "git-stack-generate"
+path = "src/bin/git-stack-generate.rs"
+required-features = ["generate"]
 
 [dev-dependencies]
 assert_cmd = "2.1.1"
