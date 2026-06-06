@@ -20,7 +20,12 @@ fn main() -> Result<()> {
         Command::Restack {
             update_refs,
             no_update_refs,
-        } => stack::restack(cli::UpdateRefsMode::from_flags(update_refs, no_update_refs)),
+            push,
+            no_push,
+        } => stack::restack(
+            cli::UpdateRefsMode::from_flags(update_refs, no_update_refs),
+            cli::PushMode::from_flags(push, no_push),
+        ),
         Command::Continue => stack::continue_restack(),
         Command::Abort => stack::abort_restack(),
         Command::Provider => providers::print_provider(),

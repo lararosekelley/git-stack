@@ -41,6 +41,12 @@ pub enum Command {
         /// Do not pass --update-refs to git rebase.
         #[arg(long, action = ArgAction::SetTrue)]
         no_update_refs: bool,
+        /// Force-push (with lease) every rebased branch afterwards.
+        #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_push")]
+        push: bool,
+        /// Do not push rebased branches, overriding stack.pushOnRestack.
+        #[arg(long, action = ArgAction::SetTrue)]
+        no_push: bool,
     },
     /// Continue an interrupted restack after resolving conflicts.
     Continue,
@@ -116,6 +122,23 @@ pub enum UpdateRefsMode {
 impl UpdateRefsMode {
     pub fn from_flags(update_refs: bool, no_update_refs: bool) -> Self {
         match (update_refs, no_update_refs) {
+            (true, false) => Self::Enabled,
+            (false, true) => Self::Disabled,
+            _ => Self::Config,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum PushMode {
+    Config,
+    Enabled,
+    Disabled,
+}
+
+impl PushMode {
+    pub fn from_flags(push: bool, no_push: bool) -> Self {
+        match (push, no_push) {
             (true, false) => Self::Enabled,
             (false, true) => Self::Disabled,
             _ => Self::Config,

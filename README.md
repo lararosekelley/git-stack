@@ -82,7 +82,7 @@ Navigation and re-stacking:
 ```sh
 git stk up
 git stk down [branch]
-git stk restack [--update-refs | --no-update-refs]
+git stk restack [--update-refs | --no-update-refs] [--push | --no-push]
 git stk continue
 git stk abort
 ```
@@ -132,6 +132,12 @@ for one run. If a rebase conflicts, `git-stk` records state in `.git/stack-state
 `git-stk` records each branch's fork point in `.gitconfig` as `branch.<name>.stackBase` and rebases with
 `--onto`, so only a branch's own commits are replayed. This makes restacking safe after a parent is
 squash-merged, rebase-merged, or amended. A missing or stale fork point falls back to a plain rebase.
+
+After a restack, every rebased branch's remote counterpart is stale. Pass `--push` (or set
+`git config stack.pushOnRestack true`) to force-push (with lease) all rebased branches automatically,
+including after a conflicted restack finishes via `git stk continue`. Without it, `restack` prints the
+exact push command instead. `--no-push` overrides the config for one run; `stack.remote` picks the remote
+(default `origin`).
 
 ## Generated Assets
 

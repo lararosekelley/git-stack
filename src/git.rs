@@ -48,6 +48,13 @@ pub fn delete_branch(branch: &str) -> Result<()> {
     status(&["branch", "-D", branch]).with_context(|| format!("failed to delete branch {branch}"))
 }
 
+pub fn push_force_with_lease(remote: &str, branches: &[String]) -> Result<()> {
+    let mut args = vec!["push", "--force-with-lease", remote];
+    args.extend(branches.iter().map(String::as_str));
+
+    status(&args).with_context(|| format!("failed to push branches to {remote}"))
+}
+
 pub fn rebase(parent: &str, branch: &str, update_refs: bool) -> Result<()> {
     let mut args = vec!["rebase"];
     if update_refs {

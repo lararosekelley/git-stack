@@ -1982,3 +1982,161 @@ fn version_flag_prints_name_and_version() {
             env!("CARGO_PKG_VERSION")
         )));
 }
+
+impl TestRepo {
+    /// Create a bare repo, add it as origin, and push the given branches.
+    fn add_bare_origin(&self, branches: &[&str]) -> TempDir {
+        let bare = tempfile::tempdir().expect("create bare remote");
+        Command::new("git")
+            .args(["init", "--bare", "--initial-branch", "main"])
+            .arg(bare.path())
+            .output()
+            .expect("init bare remote");
+
+        self.git(["remote", "add", "origin", bare.path().to_str().unwrap()]);
+        for branch in branches {
+            self.git(["push", "-u", "origin", branch]);
+        }
+        bare
+    }
+
+    fn remote_sha(&self, bare: &TempDir, branch: &str) -> String {
+        let output = Command::new("git")
+            .args(["rev-parse", branch])
+            .current_dir(bare.path())
+            .output()
+            .expect("rev-parse remote branch");
+        assert!(output.status.success(), "remote branch {branch} missing");
+        String::from_utf8_lossy(&output.stdout).trim().to_owned()
+    }
+}
+
+#[test]
+fn restack_push_flag_pushes_rewritten_branches() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "parent change");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "child change");
+
+    let bare = repo.add_bare_origin(&["main", "feature/a", "feature/b"]);
+
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a2.txt", "a2\n", "parent moves");
+
+    repo.stack()
+        .args(["restack", "--push"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "pushed feature/a feature/b to origin",
+        ));
+
+    assert_eq!(
+        repo.remote_sha(&bare, "feature/b"),
+        repo.git(["rev-parse", "feature/b"])
+    );
+}
+
+#[test]
+fn restack_prints_push_hint_when_not_pushing() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "parent change");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "child change");
+
+    let bare = repo.add_bare_origin(&["main", "feature/a", "feature/b"]);
+    let stale = repo.remote_sha(&bare, "feature/b");
+
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a2.txt", "a2\n", "parent moves");
+
+    repo.stack()
+        .arg("restack")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "git push --force-with-lease origin feature/a feature/b",
+        ));
+
+    // No push happened.
+    assert_eq!(repo.remote_sha(&bare, "feature/b"), stale);
+}
+
+#[test]
+fn restack_push_respects_config_and_no_push_overrides_it() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.pushOnRestack", "true"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "parent change");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "child change");
+
+    let bare = repo.add_bare_origin(&["main", "feature/a", "feature/b"]);
+
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a2.txt", "a2\n", "parent moves");
+
+    // Config enables the push.
+    repo.stack().arg("restack").assert().success();
+    assert_eq!(
+        repo.remote_sha(&bare, "feature/b"),
+        repo.git(["rev-parse", "feature/b"])
+    );
+
+    // --no-push overrides the config.
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a3.txt", "a3\n", "parent moves again");
+    let before = repo.remote_sha(&bare, "feature/b");
+
+    repo.stack()
+        .args(["restack", "--no-push"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("remote branches may be stale"));
+    assert_eq!(repo.remote_sha(&bare, "feature/b"), before);
+}
+
+#[test]
+fn continue_after_conflict_pushes_all_restacked_branches() {
+    let repo = TestRepo::new();
+
+    repo.commit_file("conflict.txt", "base\n", "add conflict file");
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("conflict.txt", "parent\n", "parent edits conflict file");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("conflict.txt", "parent\nchild\n", "child edits same file");
+
+    let bare = repo.add_bare_origin(&["main", "feature/a", "feature/b"]);
+
+    repo.git(["switch", "feature/a"]);
+    repo.git(["reset", "--hard", "HEAD~1"]);
+    repo.commit_file(
+        "conflict.txt",
+        "updated parent\n",
+        "update parent differently",
+    );
+    repo.git(["push", "--force-with-lease", "origin", "feature/a"]);
+
+    repo.stack().args(["restack", "--push"]).assert().failure();
+
+    repo.write("conflict.txt", "updated parent\nchild\n");
+    repo.git(["add", "conflict.txt"]);
+
+    repo.stack()
+        .arg("continue")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "pushed feature/a feature/b to origin",
+        ));
+
+    assert_eq!(
+        repo.remote_sha(&bare, "feature/b"),
+        repo.git(["rev-parse", "feature/b"])
+    );
+}
