@@ -96,6 +96,7 @@
       or behind a flag/config (`stk.syncCheckout`)? Should it refresh stack overview notes too (see the
       cleanup note item above - same machinery, natural home)
 - [ ] `git stk guide` command to provide an example to try the tool out?
+- [ ] More color in CLI all over the place to make it feel more professional
 
 ## More git automation
 
