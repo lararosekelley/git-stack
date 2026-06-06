@@ -41,6 +41,10 @@ pub fn create_branch(branch: &str) -> Result<()> {
     status(&["switch", "-c", branch]).with_context(|| format!("failed to create branch {branch}"))
 }
 
+pub fn delete_branch(branch: &str) -> Result<()> {
+    status(&["branch", "-d", branch]).with_context(|| format!("failed to delete branch {branch}"))
+}
+
 pub fn rebase(parent: &str, branch: &str, update_refs: bool) -> Result<()> {
     let mut args = vec!["rebase"];
     if update_refs {

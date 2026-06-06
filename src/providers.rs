@@ -297,11 +297,12 @@ pub fn submit(branch: Option<&str>, submit_stack: bool, dry_run: bool) -> Result
     Ok(())
 }
 
-pub fn cleanup(branch: Option<&str>, dry_run: bool) -> Result<()> {
+pub fn cleanup(branch: Option<&str>, dry_run: bool, delete_branch: bool) -> Result<()> {
     let branch = branch
         .map(str::to_owned)
         .map_or_else(git::current_branch, Ok)?;
     let branches = stack::branch_and_descendants(&branch)?;
+    let current_branch = git::current_branch()?;
     let provider = detect_provider()?;
     let review_provider = review_provider(provider.kind);
     let mut cleaned = 0;
@@ -321,6 +322,7 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool) -> Result<()> {
         }
 
         cleanup_merged_branch(review_provider.as_ref(), &branch, dry_run)?;
+        cleanup_branch_deletion(&branch, &current_branch, dry_run, delete_branch)?;
         cleaned += 1;
     }
 
@@ -369,6 +371,31 @@ fn cleanup_merged_branch(
     println!("{} detach {branch}", if dry_run { "would" } else { "will" });
     if !dry_run {
         stack::unset_parent_for_branch(branch)?;
+    }
+
+    Ok(())
+}
+
+fn cleanup_branch_deletion(
+    branch: &str,
+    current_branch: &str,
+    dry_run: bool,
+    delete_branch: bool,
+) -> Result<()> {
+    if !delete_branch {
+        return Ok(());
+    }
+
+    if branch == current_branch {
+        bail!("refusing to delete currently checked out branch {branch}");
+    }
+
+    println!(
+        "{} delete branch {branch}",
+        if dry_run { "would" } else { "will" }
+    );
+    if !dry_run {
+        git::delete_branch(branch)?;
     }
 
     Ok(())

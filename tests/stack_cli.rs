@@ -1154,3 +1154,116 @@ esac
         "feature/a"
     );
 }
+
+#[test]
+fn cleanup_delete_branch_removes_cleaned_merged_branch() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.git(["switch", "main"]);
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+JSON
+    ;;
+  *feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stack/pull/13"}]
+JSON
+    ;;
+  pr\ edit*)
+    printf 'updated child review\n'
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["cleanup", "--delete-branch", "feature/a"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("will delete branch feature/a"))
+        .stdout(predicates::str::contains(
+            "cleanup complete: 1 cleaned, 1 skipped",
+        ));
+
+    assert!(
+        !repo
+            .git(["branch", "--list", "feature/a"])
+            .contains("feature/a")
+    );
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stackParent"]),
+        "main"
+    );
+}
+
+#[test]
+fn cleanup_delete_branch_dry_run_keeps_branch() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.git(["switch", "main"]);
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+cat <<'JSON'
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+JSON
+"##,
+    );
+
+    repo.stack()
+        .args(["cleanup", "--dry-run", "--delete-branch", "feature/a"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("would delete branch feature/a"));
+
+    assert!(
+        repo.git(["branch", "--list", "feature/a"])
+            .contains("feature/a")
+    );
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/a.stackParent"]),
+        "main"
+    );
+}
+
+#[test]
+fn cleanup_delete_branch_refuses_current_branch() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+cat <<'JSON'
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+JSON
+"##,
+    );
+
+    repo.stack()
+        .args(["cleanup", "--delete-branch", "feature/a"])
+        .env("PATH", path)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "refusing to delete currently checked out branch feature/a",
+        ));
+
+    assert!(
+        repo.git(["branch", "--list", "feature/a"])
+            .contains("feature/a")
+    );
+}

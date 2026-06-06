@@ -35,6 +35,10 @@ fn main() -> Result<()> {
             dry_run,
             stack,
         } => providers::submit(branch.as_deref(), stack, dry_run),
-        Command::Cleanup { branch, dry_run } => providers::cleanup(branch.as_deref(), dry_run),
+        Command::Cleanup {
+            branch,
+            dry_run,
+            delete_branch,
+        } => providers::cleanup(branch.as_deref(), dry_run, delete_branch),
     }
 }

@@ -72,6 +72,9 @@ pub enum Command {
         /// Print what would change without updating local metadata.
         #[arg(long, action = ArgAction::SetTrue)]
         dry_run: bool,
+        /// Delete cleaned merged branches after updating stack metadata.
+        #[arg(long, action = ArgAction::SetTrue)]
+        delete_branch: bool,
     },
 }
 
