@@ -128,6 +128,9 @@ git stk submit --stack [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--delete-branch]
 ```
 
+`submit --stack` and `restack` operate on the whole stack containing the current branch - walk to the
+root, then every branch above it - so it never matters where in the stack you are standing.
+
 `submit --push` (or `git config stk.pushOnSubmit true`) pushes the submitted branches with
 `-u --force-with-lease` before creating or updating reviews, so new branches exist remotely and rebased
 ones are updated safely.

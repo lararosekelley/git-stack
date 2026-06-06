@@ -4,7 +4,8 @@ use clap::ArgAction;
 use crate::cli::{PushMode, UpdateRefsMode};
 use crate::commands::Run;
 
-/// Rebase the current branch and descendants onto their stack parents.
+/// Rebase every branch in the current stack onto its parent, from
+/// anywhere in the stack.
 #[derive(Debug, clap::Args)]
 pub struct Restack {
     /// Pass --update-refs to git rebase.

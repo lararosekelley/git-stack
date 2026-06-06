@@ -17,7 +17,7 @@ pub struct Submit {
     /// Print what would change without creating or updating reviews.
     #[arg(long, action = ArgAction::SetTrue)]
     dry_run: bool,
-    /// Submit the branch and its descendants parent-first.
+    /// Submit the whole stack parent-first, from anywhere in it.
     #[arg(long, conflicts_with = "branch")]
     stack: bool,
     /// Push branches (-u --force-with-lease) before submitting.
@@ -50,7 +50,19 @@ pub fn submit(
         .map_or_else(git::current_branch, Ok)?;
 
     let branches = if submit_stack {
-        stack::branch_and_descendants(&branch)?
+        // The whole stack containing the current branch, from anywhere in it:
+        // walk to the root, then take its descendants. The root is excluded
+        // only when it is the trunk (the base everything sits on); an
+        // unanchored root stays in so validation can point at the missing
+        // parent instead of silently skipping it.
+        let root = stack::stack_root(&branch)?;
+        let trunk = stack::trunk_branch(&git::local_branches()?);
+        let full = stack::branch_and_descendants(&root)?;
+        if Some(root) == trunk {
+            full.into_iter().skip(1).collect()
+        } else {
+            full
+        }
     } else {
         vec![branch]
     };

@@ -150,7 +150,10 @@ pub fn detach_branch(branch: Option<&str>) -> Result<()> {
 pub fn restack(update_refs_mode: UpdateRefsMode, push_mode: PushMode) -> Result<()> {
     let current = git::current_branch()?;
     let parents = parent_map()?;
-    let branches = restack_order(&current, &parents);
+    // Restack the whole stack containing the current branch, from anywhere
+    // in it: walk to the root, then rebase its descendants parent-first.
+    let root = root_for(&current, &parents);
+    let branches = restack_order(&root, &parents);
 
     if branches.is_empty() {
         println!("nothing to restack");
