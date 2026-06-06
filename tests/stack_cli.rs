@@ -1053,10 +1053,13 @@ fn cleanup_retargets_children_and_detaches_merged_branch() {
         "gh",
         r##"#!/usr/bin/env sh
 case "$*" in
-  *feature/a*)
+  *feature/a\ --state\ merged*)
     cat <<'JSON'
 [{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
+    ;;
+  *feature/a*)
+    printf '[]\n'
     ;;
   *feature/b*)
     cat <<'JSON'
@@ -1113,10 +1116,13 @@ fn cleanup_dry_run_leaves_stack_metadata_unchanged() {
         "gh",
         r##"#!/usr/bin/env sh
 case "$*" in
-  *feature/a*)
+  *feature/a\ --state\ merged*)
     cat <<'JSON'
 [{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
+    ;;
+  *feature/a*)
+    printf '[]\n'
     ;;
   *feature/b*)
     cat <<'JSON'
@@ -1168,10 +1174,13 @@ fn cleanup_delete_branch_removes_cleaned_merged_branch() {
         "gh",
         r##"#!/usr/bin/env sh
 case "$*" in
-  *feature/a*)
+  *feature/a\ --state\ merged*)
     cat <<'JSON'
 [{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
+    ;;
+  *feature/a*)
+    printf '[]\n'
     ;;
   *feature/b*)
     cat <<'JSON'
@@ -1218,9 +1227,16 @@ fn cleanup_delete_branch_dry_run_keeps_branch() {
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
-cat <<'JSON'
+case "$*" in
+  *--state\ merged*)
+    cat <<'JSON'
 [{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
 "##,
     );
 
@@ -1249,9 +1265,16 @@ fn cleanup_delete_branch_refuses_current_branch() {
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
-cat <<'JSON'
+case "$*" in
+  *--state\ merged*)
+    cat <<'JSON'
 [{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
 "##,
     );
 

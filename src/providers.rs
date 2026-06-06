@@ -97,6 +97,25 @@ impl ReviewProvider for GitHubProvider {
                 "number,state,baseRefName,headRefName,url",
             ],
         )?;
+        if let Some(review) = parse_github_review(&output)? {
+            return Ok(Some(review));
+        }
+
+        // gh pr list only returns open pull requests by default; check merged
+        // ones too so cleanup can see landed reviews.
+        let output = command_output(
+            "gh",
+            &[
+                "pr",
+                "list",
+                "--head",
+                branch,
+                "--state",
+                "merged",
+                "--json",
+                "number,state,baseRefName,headRefName,url",
+            ],
+        )?;
         parse_github_review(&output)
     }
 
@@ -117,6 +136,24 @@ impl ReviewProvider for GitLabProvider {
         let output = command_output(
             "glab",
             &["mr", "list", "--source-branch", branch, "--output", "json"],
+        )?;
+        if let Some(review) = parse_gitlab_review(&output)? {
+            return Ok(Some(review));
+        }
+
+        // glab mr list only returns open merge requests by default; check
+        // merged ones too so cleanup can see landed reviews.
+        let output = command_output(
+            "glab",
+            &[
+                "mr",
+                "list",
+                "--source-branch",
+                branch,
+                "--merged",
+                "--output",
+                "json",
+            ],
         )?;
         parse_gitlab_review(&output)
     }
