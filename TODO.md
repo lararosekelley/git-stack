@@ -13,17 +13,11 @@
       `<cmd> --help` and runs `man git-<cmd>`. Fixed via `git stk setup`, which installs the man page to
       `~/.local/share/man/man1` and wires shell completions; `upgrade` re-renders assets via the new binary
       (`setup --refresh`) after each upgrade
-- [ ] Completions don't include flags: `git stk submit --<TAB>` completes nothing. DIAGNOSED - it is a
-      clap_complete bug with dashed binary names, not our shim (a bash harness shows the direct
-      `git-stk submit --<TAB>` form fails too). The generated script is internally inconsistent: the
-      dispatch loop builds `cmd="git__stk__subcmd__submit"` but the option `case` labels are generated as
-      `git__subcmd__stk__subcmd__submit` (the `-` in `git-stk` expands differently in the two generators),
-      so no subcommand-depth case ever matches and `opts` stays empty. Top-level subcommand completion only
-      works because the shallow `git__stk` label is consistent. Fix options, in order: (1) bump
-      clap_complete and check changelog for a dashed-name fix, (2) post-process the script in
-      `completions::print` (rewrite `git__subcmd__stk` -> `git__stk`) with a harness test asserting
-      `submit --<TAB>` yields `--dry-run --stack`, (3) report upstream either way - this affects every
-      `git-*` subcommand binary
+- [x] Completions don't include flags: was a clap_complete static-script bug with dashed binary names
+      (dispatch built `git__stk__subcmd__submit` but case labels said `git__subcmd__stk__subcmd__submit`).
+      Resolved by switching to clap_complete's dynamic completion (`CompleteEnv` + `COMPLETE=bash git-stk`)
+      - the static script generator is no longer used, so the bug is moot. Flags now complete; regression
+      test asserts `submit --<TAB>` yields `--dry-run --stack`
 - [x] `git stk bump` next-step instructions don't work as printed: `git tag vX.Y.Z` creates a LIGHTWEIGHT
       tag, and `git push --follow-tags` only pushes ANNOTATED tags (confirmed: `git cat-file -t v0.3.0` ->
       `commit`, not `tag`). Fixed: printed steps now use `git tag -a vX.Y.Z -m vX.Y.Z`
@@ -54,11 +48,11 @@
 
 ## Stack ergonomics
 
-- [ ] Tab completion for branch-name arguments (`down <TAB>`, `adopt <TAB>`, `cleanup <TAB>`, ...) - huge DX
-      win. clap_complete static scripts can't complete dynamic values; options: clap_complete's dynamic
-      completion (`CompleteEnv`, completer queries the binary at completion time - also fixes the static
-      script's dashed-name bug for free), or post-process the bash script to call git's `__git_complete_refs`
-      for branch positions. Ideally stack-aware: `down` completes only children, `cleanup` only stack branches
+- [x] Tab completion for branch-name arguments - done via clap_complete dynamic completion with custom
+      `ArgValueCompleter`s: branch args complete from local branches with prefix filtering, and `down <TAB>`
+      is stack-aware (offers only the current branch's children). The shell asks the binary at completion
+      time, so candidates are always live. bash + zsh shims keep `git stk <TAB>` working through git's
+      completion; elvish/fish/powershell get binary-form completion
 - [ ] `status`/`list` should hint at what's next: e.g. "feature/b is 2 commits behind its parent - run
       `git stk restack`", "review #5 base is stale - run `git stk submit`", "parent review merged - run
       `git stk cleanup feature/a`". The data is already fetched; the hints make the tool teach its own loop

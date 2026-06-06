@@ -1,10 +1,16 @@
 use anyhow::Result;
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use git_stk::{cli, completions, providers, setup, stack, upgrade};
 
 use git_stk::cli::{Cli, Command};
 
 fn main() -> Result<()> {
+    // Dynamic shell completion: when invoked by a shell's completer with
+    // COMPLETE=<shell>, print candidates and exit instead of running a command.
+    clap_complete::env::CompleteEnv::with_factory(Cli::command)
+        .var(completions::COMPLETE_VAR)
+        .complete();
+
     let cli = Cli::parse();
 
     match cli.command {

@@ -1453,20 +1453,21 @@ fn completions_bash_includes_git_subcommand_shim() {
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "complete -F _git-stk -o nosort -o bashdefault -o default git-stk",
+            "-F _clap_complete_git_stk git-stk",
         ))
         .stdout(predicates::str::contains("_git_stk() {"));
 }
 
 #[test]
-fn completions_zsh_emits_compdef_for_git_stk() {
+fn completions_zsh_emits_compdef_and_git_shim() {
     let repo = TestRepo::new();
 
     repo.stack()
         .args(["completions", "zsh"])
         .assert()
         .success()
-        .stdout(predicates::str::contains("#compdef git-stk"));
+        .stdout(predicates::str::contains("#compdef git-stk"))
+        .stdout(predicates::str::contains("function _git-stk() {"));
 }
 
 #[test]
@@ -2138,5 +2139,101 @@ fn continue_after_conflict_pushes_all_restacked_branches() {
     assert_eq!(
         repo.remote_sha(&bare, "feature/b"),
         repo.git(["rev-parse", "feature/b"])
+    );
+}
+
+impl TestRepo {
+    /// Run the bash completion harness: source the registration script, set
+    /// up COMP_WORDS for `git stk <words...><TAB>`, invoke the _git_stk shim,
+    /// and return COMPREPLY entries.
+    fn complete_git_stk(&self, words: &[&str]) -> String {
+        let output = self.stack_output(["completions", "bash"]).stdout;
+        let script_path = self.path().join("completions.bash");
+        fs::write(&script_path, output).expect("write completions script");
+
+        let comp_words = words
+            .iter()
+            .map(|word| format!("\"{word}\""))
+            .collect::<Vec<_>>()
+            .join(" ");
+        let harness = format!(
+            r#"source "{}"
+COMP_WORDS=(git stk {comp_words})
+COMP_CWORD={}
+_git_stk
+printf '%s\n' "${{COMPREPLY[@]}}"
+"#,
+            script_path.display(),
+            words.len() + 1,
+        );
+
+        let result = Command::new("bash")
+            .args(["-c", &harness])
+            .current_dir(self.path())
+            .output()
+            .expect("run bash completion harness");
+        assert!(
+            result.status.success(),
+            "harness failed: {}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        String::from_utf8_lossy(&result.stdout).into_owned()
+    }
+}
+
+#[test]
+fn completions_complete_flags_for_subcommands() {
+    let repo = TestRepo::new();
+
+    let completions = repo.complete_git_stk(&["submit", "--"]);
+    assert!(
+        completions.contains("--dry-run") && completions.contains("--stack"),
+        "expected submit flags, got: {completions}"
+    );
+}
+
+#[test]
+fn completions_complete_only_children_for_down() {
+    let repo = TestRepo::new();
+
+    repo.stack()
+        .args(["new", "feature/alpha"])
+        .assert()
+        .success();
+    repo.stack()
+        .args(["new", "feature/beta"])
+        .assert()
+        .success();
+    repo.git(["switch", "feature/alpha"]);
+
+    let completions = repo.complete_git_stk(&["down", ""]);
+    assert!(
+        completions.contains("feature/beta"),
+        "expected child branch, got: {completions}"
+    );
+    assert!(
+        !completions.contains("main"),
+        "down must not offer non-children, got: {completions}"
+    );
+}
+
+#[test]
+fn completions_complete_branch_names_with_prefix() {
+    let repo = TestRepo::new();
+
+    repo.stack()
+        .args(["new", "feature/alpha"])
+        .assert()
+        .success();
+    repo.git(["switch", "main"]);
+
+    let completions = repo.complete_git_stk(&["status", "feat"]);
+    assert!(
+        completions.contains("feature/alpha"),
+        "expected branch completion, got: {completions}"
+    );
+    assert!(
+        !completions.contains("main"),
+        "prefix must filter branches, got: {completions}"
     );
 }

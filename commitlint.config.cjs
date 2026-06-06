@@ -19,6 +19,7 @@ module.exports = {
         "ci",
         "release",
         "tooling",
+        "shell",
       ],
     ],
   },
