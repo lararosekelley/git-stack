@@ -1,10 +1,10 @@
-# git-stack
+# git-stk
 
 > Git-native stacked branch workflow helper with GitHub and GitLab review integration.
 
 ---
 
-`git-stack` keeps stacks as ordinary Git branches. Stack parent metadata is stored locally in `.gitconfig` as
+`git-stk` keeps stacks as ordinary Git branches. Stack parent metadata is stored locally in `.gitconfig` as
 `branch.<name>.stackParent`, and GitHub PR bases or GitLab MR target branches can be used to reconstruct that metadata.
 
 ## Status
@@ -24,7 +24,7 @@ cargo install --path .
 After installation, Git can use the binary as a sub-command:
 
 ```sh
-git stack list
+git stk list
 ```
 
 ## Commands
@@ -32,34 +32,34 @@ git stack list
 Local stack metadata:
 
 ```sh
-git stack new <branch>
-git stack parent [branch]
-git stack children [branch]
-git stack list
-git stack adopt <branch> --parent <parent>
-git stack detach [branch]
+git stk new <branch>
+git stk parent [branch]
+git stk children [branch]
+git stk list
+git stk adopt <branch> --parent <parent>
+git stk detach [branch]
 ```
 
 Navigation and re-stacking:
 
 ```sh
-git stack up
-git stack down [branch]
-git stack restack [--update-refs | --no-update-refs]
-git stack continue
-git stack abort
+git stk up
+git stk down [branch]
+git stk restack [--update-refs | --no-update-refs]
+git stk continue
+git stk abort
 ```
 
 Provider-backed workflows:
 
 ```sh
-git stack provider
-git stack status [branch]
-git stack review [branch]
-git stack sync [branch] [--dry-run]
-git stack submit [branch] [--dry-run]
-git stack submit --stack [--dry-run]
-git stack cleanup [branch] [--dry-run] [--delete-branch]
+git stk provider
+git stk status [branch]
+git stk review [branch]
+git stk sync [branch] [--dry-run]
+git stk submit [branch] [--dry-run]
+git stk submit --stack [--dry-run]
+git stk cleanup [branch] [--dry-run] [--delete-branch]
 ```
 
 ## Providers
@@ -77,8 +77,8 @@ commands.
 ## Re-stacking
 
 `restack` follows Git's `rebase.updateRefs` config by default. Use `--update-refs` or `--no-update-refs` to override that
-for one run. If a rebase conflicts, `git-stack` records state in `.git/stack-state`; resolve conflicts and run
-`git stack continue`, or run `git stack abort`.
+for one run. If a rebase conflicts, `git-stk` records state in `.git/stack-state`; resolve conflicts and run
+`git stk continue`, or run `git stk abort`.
 
 ## Generated Assets
 

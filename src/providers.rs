@@ -436,7 +436,7 @@ fn branch_parents(branches: &[String]) -> Result<Vec<(String, String)>> {
     let mut branch_parents = Vec::new();
     for branch in branches {
         let Some(parent) = stack::parent_for_branch(branch)? else {
-            bail!("{branch} has no stack parent; run `git stack adopt` or `git stack sync` first");
+            bail!("{branch} has no stack parent; run `git stk adopt` or `git stk sync` first");
         };
         branch_parents.push((branch.to_owned(), parent));
     }

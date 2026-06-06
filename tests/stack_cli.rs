@@ -55,7 +55,7 @@ impl TestRepo {
 
     fn stack_output<const N: usize>(&self, args: [&str; N]) -> std::process::Output {
         let mut command = self.stack();
-        command.args(args).output().expect("run git-stack command")
+        command.args(args).output().expect("run git-stk command")
     }
 
     fn supports_update_refs(&self) -> bool {
@@ -75,7 +75,7 @@ impl TestRepo {
     }
 
     fn stack(&self) -> assert_cmd::Command {
-        let mut command = assert_cmd::Command::cargo_bin("git-stack").expect("git-stack binary");
+        let mut command = assert_cmd::Command::cargo_bin("git-stk").expect("git-stk binary");
         command.current_dir(self.path());
         command.env("GIT_EDITOR", "true");
         command
@@ -200,7 +200,7 @@ fn down_requires_branch_when_multiple_children_exist() {
         .assert()
         .failure()
         .stderr(predicates::str::contains(
-            "choose one with `git stack down <branch>`",
+            "choose one with `git stk down <branch>`",
         ));
 
     repo.stack().args(["down", "feature/b"]).assert().success();
@@ -334,7 +334,7 @@ fn restack_records_state_when_rebase_conflicts() {
         .assert()
         .failure()
         .stderr(predicates::str::contains(
-            "resolve conflicts, then run `git stack continue`",
+            "resolve conflicts, then run `git stk continue`",
         ));
 
     let state = fs::read_to_string(repo.path().join(".git/stack-state")).expect("read stack state");
@@ -400,14 +400,14 @@ fn provider_detects_github_https_remote() {
         "remote",
         "add",
         "origin",
-        "https://github.com/lararosekelley/git-stack.git",
+        "https://github.com/lararosekelley/git-stk.git",
     ]);
 
     repo.stack()
         .arg("provider")
         .assert()
         .success()
-        .stdout("github (remote origin (https://github.com/lararosekelley/git-stack.git))\n");
+        .stdout("github (remote origin (https://github.com/lararosekelley/git-stk.git))\n");
 }
 
 #[test]
@@ -417,14 +417,14 @@ fn provider_detects_github_ssh_remote() {
         "remote",
         "add",
         "origin",
-        "git@github.com:lararosekelley/git-stack.git",
+        "git@github.com:lararosekelley/git-stk.git",
     ]);
 
     repo.stack()
         .arg("provider")
         .assert()
         .success()
-        .stdout("github (remote origin (git@github.com:lararosekelley/git-stack.git))\n");
+        .stdout("github (remote origin (git@github.com:lararosekelley/git-stk.git))\n");
 }
 
 #[test]
@@ -434,12 +434,14 @@ fn provider_detects_gitlab_https_remote() {
         "remote",
         "add",
         "origin",
-        "https://gitlab.com/lararosekelley/git-stack-mirror.git",
+        "https://gitlab.com/lararosekelley/git-stk-mirror.git",
     ]);
 
-    repo.stack().arg("provider").assert().success().stdout(
-        "gitlab (remote origin (https://gitlab.com/lararosekelley/git-stack-mirror.git))\n",
-    );
+    repo.stack()
+        .arg("provider")
+        .assert()
+        .success()
+        .stdout("gitlab (remote origin (https://gitlab.com/lararosekelley/git-stk-mirror.git))\n");
 }
 
 #[test]
@@ -449,14 +451,14 @@ fn provider_detects_gitlab_ssh_remote() {
         "remote",
         "add",
         "origin",
-        "git@gitlab.com:lararosekelley/git-stack-mirror.git",
+        "git@gitlab.com:lararosekelley/git-stk-mirror.git",
     ]);
 
     repo.stack()
         .arg("provider")
         .assert()
         .success()
-        .stdout("gitlab (remote origin (git@gitlab.com:lararosekelley/git-stack-mirror.git))\n");
+        .stdout("gitlab (remote origin (git@gitlab.com:lararosekelley/git-stk-mirror.git))\n");
 }
 
 #[test]
@@ -466,7 +468,7 @@ fn provider_config_override_wins() {
         "remote",
         "add",
         "origin",
-        "https://github.com/lararosekelley/git-stack.git",
+        "https://github.com/lararosekelley/git-stk.git",
     ]);
     repo.git(["config", "stack.provider", "gitlab"]);
 
@@ -504,7 +506,7 @@ fn status_prints_local_stack_and_review_state() {
         "gh",
         r##"#!/usr/bin/env sh
 cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stack/pull/13"}]
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
 JSON
 "##,
     );
@@ -522,7 +524,7 @@ JSON
             "review: #13 open feature/b -> feature/a",
         ))
         .stdout(predicates::str::contains(
-            "url: https://github.com/lararosekelley/git-stack/pull/13",
+            "url: https://github.com/lararosekelley/git-stk/pull/13",
         ));
 }
 
@@ -558,7 +560,7 @@ fn status_warns_when_review_base_differs_from_parent() {
         "glab",
         r##"#!/usr/bin/env sh
 cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stack-mirror/-/merge_requests/34"}]
+[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
 JSON
 "##,
     );
@@ -583,14 +585,14 @@ fn review_reads_github_pr_for_current_branch() {
         "remote",
         "add",
         "origin",
-        "git@github.com:lararosekelley/git-stack",
+        "git@github.com:lararosekelley/git-stk",
     ]);
     repo.git(["switch", "-c", "feature/b"]);
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
 cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
 "##,
     );
@@ -601,7 +603,7 @@ JSON
         .assert()
         .success()
         .stdout(
-            "#12 feature/b -> feature/a open https://github.com/lararosekelley/git-stack/pull/12\n",
+            "#12 feature/b -> feature/a open https://github.com/lararosekelley/git-stk/pull/12\n",
         );
 }
 
@@ -613,7 +615,7 @@ fn review_reads_gitlab_mr_for_explicit_branch() {
         "glab",
         r##"#!/usr/bin/env sh
 cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stack-mirror/-/merge_requests/34"}]
+[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
 JSON
 "##,
     );
@@ -623,7 +625,7 @@ JSON
         .env("PATH", path)
         .assert()
         .success()
-        .stdout("!34 feature/b -> feature/a open https://gitlab.com/lararosekelley/git-stack-mirror/-/merge_requests/34\n");
+        .stdout("!34 feature/b -> feature/a open https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34\n");
 }
 
 #[test]
@@ -658,7 +660,7 @@ fn sync_sets_parent_from_github_pr_base() {
         "gh",
         r##"#!/usr/bin/env sh
 cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
 "##,
     );
@@ -687,7 +689,7 @@ fn sync_dry_run_reports_parent_without_writing_config() {
         "gh",
         r##"#!/usr/bin/env sh
 cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
 "##,
     );
@@ -720,7 +722,7 @@ fn sync_sets_parent_from_gitlab_mr_target() {
         "glab",
         r##"#!/usr/bin/env sh
 cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stack-mirror/-/merge_requests/34"}]
+[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
 JSON
 "##,
     );
@@ -754,7 +756,7 @@ fn sync_all_local_branches_skips_branches_without_reviews() {
 case "$*" in
   *feature/b*)
     cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
     ;;
   *)
@@ -794,7 +796,7 @@ case "$*" in
     printf '[]\n'
     ;;
   pr\ create*)
-    printf 'https://github.com/lararosekelley/git-stack/pull/12\n'
+    printf 'https://github.com/lararosekelley/git-stk/pull/12\n'
     ;;
   *)
     echo "unexpected gh args: $*" >&2
@@ -811,7 +813,7 @@ esac
         .success()
         .stdout(predicates::str::contains("created feature/b -> feature/a"))
         .stdout(predicates::str::contains(
-            "https://github.com/lararosekelley/git-stack/pull/12",
+            "https://github.com/lararosekelley/git-stk/pull/12",
         ))
         .stdout(predicates::str::contains(
             "submit complete: 1 created, 0 updated, 0 skipped",
@@ -858,7 +860,7 @@ fn submit_noops_when_github_pr_already_targets_parent() {
 case "$*" in
   pr\ list*)
     cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
     ;;
   *)
@@ -888,7 +890,7 @@ fn submit_updates_gitlab_mr_target_when_parent_changed() {
 case "$*" in
   mr\ list*)
     cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stack-mirror/-/merge_requests/34"}]
+[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
 JSON
     ;;
   mr\ update*)
@@ -925,7 +927,7 @@ fn submit_dry_run_reports_update_without_calling_update() {
 case "$*" in
   mr\ list*)
     cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stack-mirror/-/merge_requests/34"}]
+[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
 JSON
     ;;
   *)
@@ -1053,12 +1055,12 @@ fn cleanup_retargets_children_and_detaches_merged_branch() {
 case "$*" in
   *feature/a*)
     cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
     ;;
   *feature/b*)
     cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stack/pull/13"}]
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
 JSON
     ;;
   pr\ edit*)
@@ -1113,12 +1115,12 @@ fn cleanup_dry_run_leaves_stack_metadata_unchanged() {
 case "$*" in
   *feature/a*)
     cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
     ;;
   *feature/b*)
     cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stack/pull/13"}]
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
 JSON
     ;;
   pr\ edit*)
@@ -1168,12 +1170,12 @@ fn cleanup_delete_branch_removes_cleaned_merged_branch() {
 case "$*" in
   *feature/a*)
     cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
     ;;
   *feature/b*)
     cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stack/pull/13"}]
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
 JSON
     ;;
   pr\ edit*)
@@ -1217,7 +1219,7 @@ fn cleanup_delete_branch_dry_run_keeps_branch() {
         "gh",
         r##"#!/usr/bin/env sh
 cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
 "##,
     );
@@ -1248,7 +1250,7 @@ fn cleanup_delete_branch_refuses_current_branch() {
         "gh",
         r##"#!/usr/bin/env sh
 cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stack/pull/12"}]
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
 JSON
 "##,
     );

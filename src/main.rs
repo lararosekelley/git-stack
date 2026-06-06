@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
-use git_stack::{cli, providers, stack};
+use git_stk::{cli, providers, stack};
 
-use git_stack::cli::{Cli, Command};
+use git_stk::cli::{Cli, Command};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();

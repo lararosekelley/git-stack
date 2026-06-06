@@ -1,5 +1,5 @@
 {
-  "name": "git-stack",
+  "name": "git-stk",
   "private": true,
   "scripts": {
     "prepare": "husky"

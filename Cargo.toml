@@ -1,12 +1,12 @@
 [package]
-name = "git-stack"
+name = "git-stk"
 version = "0.1.0"
 edition = "2024"
 description = "Git-native stacked branch workflow helper"
 readme = "README.md"
 license-file = "LICENSE"
-homepage = "https://larakelley.com/git-stack"
-repository = "https://github.com/lararosekelley/git-stack"
+homepage = "https://larakelley.com/git-stk"
+repository = "https://github.com/lararosekelley/git-stk"
 rust-version = "1.95.0"
 keywords = ["git", "stacked-diffs", "cli", "github", "gitlab"]
 categories = ["command-line-utilities", "development-tools"]
@@ -32,8 +32,8 @@ serde_json = "1.0.150"
 generate = ["dep:clap_complete", "dep:clap_mangen"]
 
 [[bin]]
-name = "git-stack-generate"
-path = "src/bin/git-stack-generate.rs"
+name = "git-stk-generate"
+path = "src/bin/git-stk-generate.rs"
 required-features = ["generate"]
 
 [dev-dependencies]

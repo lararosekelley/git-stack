@@ -32,7 +32,7 @@ jobs:
             exit 1
           fi
 
-          git remote add gitlab "https://oauth2:${GITLAB_MIRROR_TOKEN}@gitlab.com/lararosekelley/git-stack-mirror.git"
+          git remote add gitlab "https://oauth2:${GITLAB_MIRROR_TOKEN}@gitlab.com/lararosekelley/git-stk-mirror.git"
 
           if [ "$GITHUB_REF_TYPE" = "branch" ]; then
             git push gitlab main:main

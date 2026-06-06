@@ -31,15 +31,15 @@ dist-plan:
 
 # Generate shell completions and man pages
 generate-assets:
-    cargo run --features generate --bin git-stack-generate -- all target/generated
+    cargo run --features generate --bin git-stk-generate -- all target/generated
 
 # Generate shell completions
 generate-completions:
-    cargo run --features generate --bin git-stack-generate -- completions target/generated/completions
+    cargo run --features generate --bin git-stk-generate -- completions target/generated/completions
 
 # Generate man pages
 generate-man:
-    cargo run --features generate --bin git-stack-generate -- man target/generated/man
+    cargo run --features generate --bin git-stk-generate -- man target/generated/man
 
 # Testing
 # -------

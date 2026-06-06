@@ -19,8 +19,8 @@ hosting = "github"
 install-updater = false
 
 [dist.binaries]
-aarch64-apple-darwin = ["git-stack"]
-aarch64-unknown-linux-gnu = ["git-stack"]
-x86_64-apple-darwin = ["git-stack"]
-x86_64-unknown-linux-gnu = ["git-stack"]
-x86_64-pc-windows-msvc = ["git-stack"]
+aarch64-apple-darwin = ["git-stk"]
+aarch64-unknown-linux-gnu = ["git-stk"]
+x86_64-apple-darwin = ["git-stk"]
+x86_64-unknown-linux-gnu = ["git-stk"]
+x86_64-pc-windows-msvc = ["git-stk"]

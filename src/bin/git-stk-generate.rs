@@ -3,11 +3,11 @@ use std::{fs, path::PathBuf};
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
 use clap_complete::{Shell, generate_to};
-use git_stack::cli::Cli;
+use git_stk::cli::Cli;
 
 #[derive(Debug, Parser)]
-#[command(name = "git-stack-generate")]
-#[command(about = "Generate git-stack shell completions and man pages")]
+#[command(name = "git-stk-generate")]
+#[command(about = "Generate git-stk shell completions and man pages")]
 struct Args {
     #[command(subcommand)]
     command: Command,
@@ -86,7 +86,7 @@ fn generate_completions(out_dir: &PathBuf, shell: Option<CompletionShell>) -> Re
 
     for shell in shells {
         let mut command = Cli::command();
-        let path = generate_to(Shell::from(shell), &mut command, "git-stack", out_dir)?;
+        let path = generate_to(Shell::from(shell), &mut command, "git-stk", out_dir)?;
         println!("generated {}", path.display());
     }
 
@@ -95,7 +95,7 @@ fn generate_completions(out_dir: &PathBuf, shell: Option<CompletionShell>) -> Re
 
 fn generate_man_page(out_dir: &PathBuf) -> Result<()> {
     fs::create_dir_all(out_dir)?;
-    let path = out_dir.join("git-stack.1");
+    let path = out_dir.join("git-stk.1");
     let mut buffer = Vec::new();
     clap_mangen::Man::new(Cli::command()).render(&mut buffer)?;
     fs::write(&path, buffer)?;

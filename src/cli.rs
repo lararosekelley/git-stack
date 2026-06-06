@@ -1,7 +1,7 @@
 use clap::{ArgAction, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
-#[command(name = "git-stack")]
+#[command(name = "git-stk")]
 #[command(about = "Git-native stacked branch workflow helper, with GitHub and GitLab integration")]
 pub struct Cli {
     #[command(subcommand)]

@@ -68,7 +68,7 @@ pub fn checkout_child(branch: Option<&str>) -> Result<()> {
             for child in children {
                 eprintln!("  {child}");
             }
-            bail!("choose one with `git stack down <branch>`");
+            bail!("choose one with `git stk down <branch>`");
         }
     };
 
@@ -134,8 +134,8 @@ pub fn continue_restack() -> Result<()> {
 
     if let Err(error) = git::rebase_continue() {
         eprintln!("restack still has conflicts");
-        eprintln!("resolve conflicts, then run `git stack continue`");
-        eprintln!("or run `git stack abort`");
+        eprintln!("resolve conflicts, then run `git stk continue`");
+        eprintln!("or run `git stk abort`");
         return Err(error);
     }
 
@@ -242,8 +242,8 @@ fn restack_branches(
             .write()?;
 
             eprintln!("conflict while rebasing {branch} onto {parent}");
-            eprintln!("resolve conflicts, then run `git stack continue`");
-            eprintln!("or run `git stack abort`");
+            eprintln!("resolve conflicts, then run `git stk continue`");
+            eprintln!("or run `git stk abort`");
             return Err(error);
         }
     }
