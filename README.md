@@ -12,11 +12,13 @@
 `git-stk` keeps stacks as ordinary Git branches. Stack parent metadata is stored locally in `.git/config` as
 `branch.<name>.stkParent`, and GitHub PR bases or GitLab MR target branches can be used to reconstruct that metadata.
 
-## Status
+## Reporting issues
 
-This project is experimental. The current implementation focuses on local stacked branch workflows plus
-provider-backed review lookup, sync, submit, and cleanup. It does not replace Git's branch model or
-attempt automatic conflict resolution.
+Planned work and known issues are tracked in
+[GitHub issues](https://github.com/lararosekelley/git-stk/issues).
+
+Feel free to report bugs, feedback, feature requests, or ask questions
+there; just be polite 😉
 
 ## Install
 
