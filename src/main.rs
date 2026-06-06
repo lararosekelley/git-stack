@@ -19,7 +19,13 @@ fn main() -> Result<()> {
         Command::Children { branch } => stack::print_children(branch.as_deref()),
         Command::Up { branch } => stack::checkout_child(branch.as_deref()),
         Command::Down => stack::checkout_parent(),
-        Command::List => stack::print_stack(),
+        Command::List { markdown } => {
+            if markdown {
+                providers::list_markdown()
+            } else {
+                stack::print_stack()
+            }
+        }
         Command::Status { branch } => providers::print_status(branch.as_deref()),
         Command::Adopt { branch, parent } => stack::adopt_branch(&branch, &parent),
         Command::Detach { branch } => stack::detach_branch(branch.as_deref()),

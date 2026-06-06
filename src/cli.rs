@@ -34,7 +34,11 @@ pub enum Command {
     /// Move down the stack: check out the current branch's parent.
     Down,
     /// Print the current stack.
-    List,
+    List {
+        /// Print a shareable markdown summary with PR links and states.
+        #[arg(long, action = ArgAction::SetTrue)]
+        markdown: bool,
+    },
     /// Print local and remote stack status for a branch.
     Status {
         #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
