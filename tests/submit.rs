@@ -322,7 +322,12 @@ esac
     );
     assert!(bottom.contains("- `main`"));
     assert!(
-        bottom.contains("Stack managed by [git-stk](https://github.com/lararosekelley/git-stk)")
+        bottom.contains(
+            "Stack managed by \
+             <img src=\"https://raw.githubusercontent.com/lararosekelley/git-stk/main/assets/logo.svg\" \
+             width=\"12\" height=\"12\" alt=\"\" /> \
+             [git-stk](https://github.com/lararosekelley/git-stk)"
+        )
     );
 
     // The top PR points at itself instead.
