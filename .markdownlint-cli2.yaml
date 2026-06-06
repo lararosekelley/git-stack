@@ -1,0 +1,33 @@
+# Configuration for markdownlint-cli2
+
+# Globs to lint
+globs:
+  - "**/*.md"
+
+# Globs to ignore
+ignores:
+  # Build output and dependencies
+  - node_modules/**
+  - target/**
+  # Temporary local-only docs
+  - docs/temp/**
+
+# Rule configuration
+config:
+  default: true
+
+  # Line length: 120 chars, exclude code blocks and tables
+  MD013:
+    line_length: 120
+    code_blocks: false
+    tables: false
+
+  # Allow duplicate headings if not siblings
+  MD024:
+    siblings_only: true
+
+  # Allow inline HTML
+  MD033: false
+
+  # Don't require first line to be a top-level heading
+  MD041: false
