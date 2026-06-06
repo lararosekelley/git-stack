@@ -124,12 +124,14 @@ git stk review [branch]
 git stk sync [branch] [--dry-run]
 git stk repair [--dry-run]
 git stk submit [branch] [--dry-run] [--push | --no-push]
-git stk submit --stack [--dry-run] [--push | --no-push]
+git stk submit [--stack | --no-stack] [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--delete-branch]
 ```
 
 `submit --stack` and `restack` operate on the whole stack containing the current branch - walk to the
-root, then every branch above it - so it never matters where in the stack you are standing.
+root, then every branch above it - so it never matters where in the stack you are standing. With
+`git config stk.submitStack true`, bare `submit` does this by default; `--no-stack` or naming a branch
+submits a single branch.
 
 `submit --push` (or `git config stk.pushOnSubmit true`) pushes the submitted branches with
 `-u --force-with-lease` before creating or updating reviews, so new branches exist remotely and rebased
@@ -169,6 +171,8 @@ Everything is optional; defaults shown below:
     pushOnRestack = true
     ; Push branches (-u --force-with-lease) before submitting reviews. Default: false.
     pushOnSubmit = true
+    ; Bare `submit` submits the whole stack instead of one branch. Default: false.
+    submitStack = true
 ```
 
 The tool also manages per-branch metadata: `branch.<name>.stkParent` (the stack parent) and
