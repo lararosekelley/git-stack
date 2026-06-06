@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::Parser;
-use git_stk::{cli, providers, stack};
+use git_stk::{cli, providers, stack, upgrade};
 
 use git_stk::cli::{Cli, Command};
 
@@ -31,6 +31,7 @@ fn main() -> Result<()> {
             dry_run,
             stack,
         } => providers::submit(branch.as_deref(), stack, dry_run),
+        Command::Upgrade { head, force, yes } => upgrade::upgrade(head, force, yes),
         Command::Cleanup {
             branch,
             dry_run,

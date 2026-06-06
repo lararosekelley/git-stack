@@ -66,6 +66,18 @@ pub enum Command {
         #[arg(long, conflicts_with = "branch")]
         stack: bool,
     },
+    /// Upgrade git-stk to the latest release.
+    Upgrade {
+        /// Build and install the latest unreleased commit instead.
+        #[arg(long, action = ArgAction::SetTrue, conflicts_with = "force")]
+        head: bool,
+        /// Reinstall the latest release even when already up to date.
+        #[arg(long, action = ArgAction::SetTrue)]
+        force: bool,
+        /// Skip the --head confirmation prompt.
+        #[arg(long, short = 'y', action = ArgAction::SetTrue, requires = "head")]
+        yes: bool,
+    },
     /// Clean up local metadata for merged review requests.
     Cleanup {
         branch: Option<String>,

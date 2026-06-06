@@ -13,6 +13,21 @@ This project is experimental. The current implementation focuses on local stacke
 provider-backed review lookup, sync, submit, and cleanup. It does not replace Git's branch model or
 attempt automatic conflict resolution.
 
+## Install
+
+```sh
+curl https://larakelley.com/sh/git-stk | bash
+```
+
+Installers are also attached to [GitHub Releases](https://github.com/lararosekelley/git-stk/releases), or install
+from [crates.io](https://crates.io/crates/git-stk) with `cargo install git-stk --locked`.
+
+Upgrade an installer-managed copy with:
+
+```sh
+git stk upgrade
+```
+
 ## Install For Development
 
 ```sh
@@ -61,6 +76,18 @@ git stk submit [branch] [--dry-run]
 git stk submit --stack [--dry-run]
 git stk cleanup [branch] [--dry-run] [--delete-branch]
 ```
+
+Upgrading:
+
+```sh
+git stk upgrade              # upgrade to the latest release
+git stk upgrade --force      # reinstall the latest release even if up to date
+git stk upgrade --head [-y]  # build and install the latest unreleased commit
+```
+
+`upgrade` uses the install receipt written by the shell installer; copies installed with `cargo install` should
+upgrade through cargo instead. `--head` requires a Rust tool-chain, prompts before installing a pre-release build,
+and `git stk upgrade --force` returns you to the latest release afterwards.
 
 ## Providers
 

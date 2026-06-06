@@ -1,11 +1,11 @@
 [package]
 name = "git-stk"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 description = "Git-native stacked branch workflow helper"
 readme = "README.md"
 license-file = "LICENSE"
-homepage = "https://larakelley.com/git-stk"
+homepage = "https://larakelley.com/posts/git-stk"
 repository = "https://github.com/lararosekelley/git-stk"
 rust-version = "1.95.0"
 keywords = ["git", "stacked-diffs", "cli", "github", "gitlab"]
@@ -23,6 +23,7 @@ exclude = [
 
 [dependencies]
 anyhow = "1.0.100"
+axoupdater = { version = "0.10.0", default-features = false, features = ["github_releases", "blocking"] }
 clap = { version = "4.5.53", features = ["derive"] }
 clap_complete = { version = "4.5.61", optional = true }
 clap_mangen = { version = "0.2.29", optional = true }
