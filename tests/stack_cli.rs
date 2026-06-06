@@ -1317,10 +1317,18 @@ touch cargo-ran.txt
 #[test]
 fn upgrade_head_warns_and_runs_cargo_install_when_confirmed() {
     let repo = TestRepo::new();
-    let path = repo.fake_cli(
+    repo.fake_cli(
         "cargo",
         r##"#!/usr/bin/env sh
 printf '%s ' "$@" > cargo-args.txt
+"##,
+    );
+    // Stub the freshly installed binary so the post-upgrade asset refresh
+    // never reaches a real git-stk install.
+    let path = repo.fake_cli(
+        "git-stk",
+        r##"#!/usr/bin/env sh
+exit 0
 "##,
     );
 
@@ -1346,10 +1354,16 @@ printf '%s ' "$@" > cargo-args.txt
 #[test]
 fn upgrade_head_yes_skips_confirmation_prompt() {
     let repo = TestRepo::new();
-    let path = repo.fake_cli(
+    repo.fake_cli(
         "cargo",
         r##"#!/usr/bin/env sh
 printf '%s ' "$@" > cargo-args.txt
+"##,
+    );
+    let path = repo.fake_cli(
+        "git-stk",
+        r##"#!/usr/bin/env sh
+exit 0
 "##,
     );
 
@@ -1580,4 +1594,79 @@ fn setup_respects_xdg_data_home_for_man_page() {
 
     assert!(data.join("man/man1/git-stk.1").exists());
     assert!(!home.join(".local/share/man/man1/git-stk.1").exists());
+}
+
+#[test]
+fn setup_refresh_installs_man_page_without_touching_rc() {
+    let repo = TestRepo::new();
+    let home = repo.path().join("home");
+    fs::create_dir_all(&home).expect("create fake home");
+
+    repo.stack()
+        .args(["setup", "--refresh"])
+        .env("HOME", &home)
+        .env_remove("XDG_DATA_HOME")
+        .env("SHELL", "/bin/bash")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("installed man page"));
+
+    assert!(home.join(".local/share/man/man1/git-stk.1").exists());
+    assert!(!home.join(".bashrc").exists());
+}
+
+#[test]
+fn upgrade_head_refreshes_assets_with_new_binary() {
+    let repo = TestRepo::new();
+    repo.fake_cli(
+        "cargo",
+        r##"#!/usr/bin/env sh
+exit 0
+"##,
+    );
+    // Fake the freshly installed binary: upgrade must invoke it (not itself)
+    // so refreshed assets match the new version.
+    let path = repo.fake_cli(
+        "git-stk",
+        r##"#!/usr/bin/env sh
+printf '%s ' "$@" > stk-args.txt
+"##,
+    );
+
+    repo.stack()
+        .args(["upgrade", "--head", "--yes"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("installed git-stk from HEAD"));
+
+    let recorded =
+        fs::read_to_string(repo.path().join("stk-args.txt")).expect("fake git-stk args recorded");
+    assert_eq!(recorded.trim(), "setup --refresh");
+}
+
+#[test]
+fn upgrade_head_warns_when_asset_refresh_fails() {
+    let repo = TestRepo::new();
+    let path = repo.fake_cli(
+        "cargo",
+        r##"#!/usr/bin/env sh
+exit 0
+"##,
+    );
+    repo.fake_cli(
+        "git-stk",
+        r##"#!/usr/bin/env sh
+exit 1
+"##,
+    );
+
+    repo.stack()
+        .args(["upgrade", "--head", "--yes"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stderr(predicates::str::contains(
+            "failed to refresh generated assets",
+        ));
 }

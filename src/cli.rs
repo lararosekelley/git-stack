@@ -77,6 +77,9 @@ pub enum Command {
         /// Skip confirmation prompts.
         #[arg(long, short = 'y', action = ArgAction::SetTrue)]
         yes: bool,
+        /// Only re-render generated assets (man page); never touch shell rc files.
+        #[arg(long, action = ArgAction::SetTrue, conflicts_with = "yes")]
+        refresh: bool,
     },
     /// Upgrade git-stk to the latest release.
     Upgrade {

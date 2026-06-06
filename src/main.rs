@@ -32,7 +32,7 @@ fn main() -> Result<()> {
             stack,
         } => providers::submit(branch.as_deref(), stack, dry_run),
         Command::Completions { shell } => completions::print(shell),
-        Command::Setup { yes } => setup::setup(yes),
+        Command::Setup { yes, refresh } => setup::setup(yes, refresh),
         Command::Upgrade { head, force, yes } => upgrade::upgrade(head, force, yes),
         Command::Cleanup {
             branch,

@@ -36,7 +36,24 @@ fn upgrade_to_head(yes: bool) -> Result<()> {
 
     println!("installed git-stk from HEAD");
     println!("to return to the latest release, run: git stk upgrade --force");
+    refresh_assets_with_new_binary();
     Ok(())
+}
+
+/// Re-render generated assets (man page) after an upgrade, using the newly
+/// installed binary so the assets match its version rather than the running
+/// (pre-upgrade) one. Failure is a warning, not an error: the upgrade itself
+/// already succeeded.
+fn refresh_assets_with_new_binary() {
+    let refreshed = Command::new("git-stk")
+        .args(["setup", "--refresh"])
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false);
+
+    if !refreshed {
+        eprintln!("warning: failed to refresh generated assets; run `git stk setup` manually");
+    }
 }
 
 fn upgrade_to_latest_release(force: bool) -> Result<()> {
@@ -60,6 +77,7 @@ fn upgrade_to_latest_release(force: bool) -> Result<()> {
                 .map(|version| version.to_string())
                 .unwrap_or_else(|| "unknown".to_owned());
             println!("upgraded git-stk {old} -> {}", result.new_version);
+            refresh_assets_with_new_binary();
         }
         None => println!(
             "git-stk {} is already the latest release",

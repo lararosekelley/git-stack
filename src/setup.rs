@@ -11,17 +11,18 @@ use crate::prompt::confirm;
 /// Marker comment written above the completion line so re-runs can detect it.
 const COMPLETION_MARKER: &str = "# added by git-stk setup";
 
-pub fn setup(yes: bool) -> Result<()> {
+pub fn setup(yes: bool, refresh: bool) -> Result<()> {
+    if refresh {
+        // Re-render assets that can go stale across versions. Non-interactive;
+        // run by `upgrade` via the newly installed binary. Completion wiring is
+        // left alone because the rc line re-sources from the binary on every
+        // shell start.
+        return install_man_page();
+    }
+
     install_man_page()?;
     wire_completions(yes)?;
     Ok(())
-}
-
-/// Re-render assets that can go stale across versions. Non-interactive; used
-/// after upgrades. Completion wiring is left alone because the rc line
-/// re-sources from the binary on every shell start.
-pub fn refresh() -> Result<()> {
-    install_man_page()
 }
 
 /// Render the man page into the XDG data directory, which is on the default
