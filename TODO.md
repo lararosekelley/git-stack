@@ -24,6 +24,12 @@
       `completions::print` (rewrite `git__subcmd__stk` -> `git__stk`) with a harness test asserting
       `submit --<TAB>` yields `--dry-run --stack`, (3) report upstream either way - this affects every
       `git-*` subcommand binary
+- [ ] `git stk bump` next-step instructions don't work as printed: `git tag vX.Y.Z` creates a LIGHTWEIGHT
+      tag, and `git push --follow-tags` only pushes ANNOTATED tags (confirmed: `git cat-file -t v0.3.0` ->
+      `commit`, not `tag`). Fix the printed steps to `git tag -a vX.Y.Z -m vX.Y.Z` (annotated also carries
+      tagger/date, which release tooling prefers) or `git push origin vX.Y.Z`
+- [ ] `git-stk --version` errors - clap's version flag was never enabled. Add `#[command(version)]` to the
+      Cli struct (one attribute; completions/man page pick it up automatically)
 
 ## Handle more cases / types of merges
 
@@ -50,6 +56,18 @@
 
 ## Stack ergonomics
 
+- [ ] Tab completion for branch-name arguments (`down <TAB>`, `adopt <TAB>`, `cleanup <TAB>`, ...) - huge DX
+      win. clap_complete static scripts can't complete dynamic values; options: clap_complete's dynamic
+      completion (`CompleteEnv`, completer queries the binary at completion time - also fixes the static
+      script's dashed-name bug for free), or post-process the bash script to call git's `__git_complete_refs`
+      for branch positions. Ideally stack-aware: `down` completes only children, `cleanup` only stack branches
+- [ ] `status`/`list` should hint at what's next: e.g. "feature/b is 2 commits behind its parent - run
+      `git stk restack`", "review #5 base is stale - run `git stk submit`", "parent review merged - run
+      `git stk cleanup feature/a`". The data is already fetched; the hints make the tool teach its own loop
+- [ ] Silence git noise when it isn't actionable: rebase progress ("Rebasing (1/1)"), `branch -d` upstream
+      warnings, etc. currently pass through raw because we use `Stdio::inherit` for status() calls. Capture
+      stderr and surface it only on failure (or behind `--verbose`); keep our own one-line summaries as the
+      primary output
 - [ ] `top` / `bottom` navigation commands
 - [ ] Better multi-child UX on `down` (interactive pick instead of erroring)
 - [ ] `repair` command: rebuild/verify local metadata from provider state in one shot
@@ -62,7 +80,18 @@
 - [ ] Should we handle pushing so it's not a manual step or doesn't have to be? Instead of
       `git push -u <list of all branches in stack>`, perhaps submit could be configured via
       `config.stk.pushOnSubmit` perhaps?
-- [ ] Same question for `restack`: offer `--push` / config to force-with-lease push rebased branches
+- [ ] Same question for `restack`: offer `--push` / config to force-with-lease push rebased branches.
+      LESSON from the first real merge cycle: restack rewrites the whole remaining stack, and a bare
+      `git push --force-with-lease` afterwards only pushes the CURRENT branch (which restack leaves at the
+      top) - stale PR diffs for everything in between. The tool knows exactly which branches it just
+      rewrote; it should push them (or at least print the exact push command for all of them)
+- [ ] `cleanup --delete-branch` uses `git branch -d`, which can REFUSE after a squash merge (commits are not
+      ancestry-merged; it only worked for us because the branch matched its un-pruned upstream). Since we
+      have provider-verified merge state at that point, use `-D` - that is strictly better information than
+      git's ancestry heuristic
+- [ ] Should `--delete-branch` be the default (with `--keep-branch` to opt out)? Cases for keeping: wanting
+      to inspect the old commits post-squash, reusing the branch name, or distrust while the tool is young.
+      Revisit once `-D` semantics above are in
 
 ## Automate completion setup
 
