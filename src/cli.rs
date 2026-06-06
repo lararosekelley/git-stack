@@ -26,13 +26,13 @@ pub enum Command {
         #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
         branch: Option<String>,
     },
-    /// Check out the current branch's stack parent.
-    Up,
-    /// Check out a stack child of the current branch.
-    Down {
+    /// Move up the stack: check out a child of the current branch.
+    Up {
         #[arg(add = ArgValueCompleter::new(completions::child_branch_candidates))]
         branch: Option<String>,
     },
+    /// Move down the stack: check out the current branch's parent.
+    Down,
     /// Print the current stack.
     List,
     /// Print local and remote stack status for a branch.

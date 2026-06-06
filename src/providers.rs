@@ -467,7 +467,7 @@ fn body_with_stack_note(body: &str, note: &str) -> String {
 /// is still valid, re-deriving it when stale.
 pub fn repair(dry_run: bool) -> Result<()> {
     let branches = git::local_branches()?;
-    let trunk = trunk_branch(&branches);
+    let trunk = stack::trunk_branch(&branches);
 
     // Provider lookup is best effort: repair must work without a remote or
     // an authenticated gh/glab.
@@ -573,23 +573,6 @@ pub fn repair(dry_run: bool) -> Result<()> {
         if dry_run { "would be " } else { "" }
     );
     Ok(())
-}
-
-/// The branch repair should never assign a parent to: the remote's default
-/// branch when known, otherwise a conventional trunk name that exists.
-fn trunk_branch(branches: &[String]) -> Option<String> {
-    let remote = git::config_get(REMOTE_KEY)
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| DEFAULT_REMOTE.to_owned());
-    if let Some(default) = git::remote_default_branch(&remote) {
-        return Some(default);
-    }
-
-    ["main", "master"]
-        .iter()
-        .find(|name| branches.iter().any(|branch| branch == *name))
-        .map(|name| (*name).to_owned())
 }
 
 enum Ancestry {

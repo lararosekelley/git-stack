@@ -37,7 +37,7 @@ git stk upgrade
 ## Shell Completions
 
 `git stk setup` configures these automatically. Completions are dynamic: the shell asks the binary for
-candidates at completion time, so subcommands, flags, and even branch names complete (`git stk down <TAB>`
+candidates at completion time, so subcommands, flags, and even branch names complete (`git stk up <TAB>`
 offers only the current branch's stack children). The installed binary prints its own registration script,
 so completions stay in sync across upgrades:
 
@@ -79,11 +79,19 @@ git stk adopt <branch> --parent <parent>
 git stk detach [branch]
 ```
 
+`list` prints the stack leaf-first, like a pile sitting on its base, with the trunk labeled:
+
+```text
+    feature/b *
+  feature/a
+main (trunk)
+```
+
 Navigation and re-stacking:
 
 ```sh
-git stk up
-git stk down [branch]
+git stk up [branch]   # towards the top of the stack (children)
+git stk down          # towards the trunk (parent)
 git stk restack [--update-refs | --no-update-refs] [--push | --no-push]
 git stk continue
 git stk abort
