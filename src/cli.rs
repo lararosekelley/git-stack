@@ -96,6 +96,12 @@ pub enum Command {
         /// Submit the branch and its descendants parent-first.
         #[arg(long, conflicts_with = "branch")]
         stack: bool,
+        /// Push branches (-u --force-with-lease) before submitting.
+        #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_push")]
+        push: bool,
+        /// Do not push branches, overriding stack.pushOnSubmit.
+        #[arg(long, action = ArgAction::SetTrue)]
+        no_push: bool,
     },
     /// Print shell completions.
     Completions {

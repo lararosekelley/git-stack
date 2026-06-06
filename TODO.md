@@ -70,9 +70,10 @@
 
 ## More git automation
 
-- [ ] Should we handle pushing so it's not a manual step or doesn't have to be? Instead of
-      `git push -u <list of all branches in stack>`, perhaps submit could be configured via
-      `config.stk.pushOnSubmit` perhaps?
+- [x] Should we handle pushing so it's not a manual step or doesn't have to be? Done: `submit --push` /
+      `--no-push` with `stack.pushOnSubmit` config fallback pushes the submitted branches with
+      `-u --force-with-lease` before any provider calls (review creation needs the branch remotely anyway).
+      Combined with `restack --push`, no part of the stack workflow requires a manual `git push`
 - [x] Same question for `restack`: offer `--push` / config to force-with-lease push rebased branches.
       Done: `restack --push` / `--no-push` with `stack.pushOnRestack` config fallback force-pushes (with
       lease) every rebased branch, including after a conflicted restack finishes via `continue` (the state
