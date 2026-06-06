@@ -1847,7 +1847,7 @@ fn detach_clears_stack_base() {
 }
 
 #[test]
-fn submit_stack_notes_dependency_in_child_review_body() {
+fn submit_stack_writes_stack_overview_into_review_bodies() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
@@ -1856,20 +1856,26 @@ fn submit_stack_notes_dependency_in_child_review_body() {
         "gh",
         r##"#!/usr/bin/env sh
 case "$*" in
+  pr\ view\ 12*)
+    printf '{"body":"Parent PR description."}\n'
+    ;;
   pr\ view\ 13*)
     printf '{"body":"Child PR description."}\n'
     ;;
+  pr\ edit\ 12\ --body*)
+    printf '%s\n' "$*" > edit-body-12.txt
+    ;;
   pr\ edit\ 13\ --body*)
-    printf '%s\n' "$*" > edit-body-args.txt
+    printf '%s\n' "$*" > edit-body-13.txt
     ;;
   pr\ list*feature/a*)
     cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]
 JSON
     ;;
   pr\ list*feature/b*)
     cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]
 JSON
     ;;
   *)
@@ -1885,17 +1891,30 @@ esac
         .env("PATH", path)
         .assert()
         .success()
-        .stdout(predicates::str::contains("noted 'Depends on #12' in #13"));
+        .stdout(predicates::str::contains("updated stack note in #12"))
+        .stdout(predicates::str::contains("updated stack note in #13"));
 
-    let recorded =
-        fs::read_to_string(repo.path().join("edit-body-args.txt")).expect("edit body args");
-    assert!(recorded.contains("Child PR description."));
-    assert!(recorded.contains("<!-- git-stk:stack -->"));
-    assert!(recorded.contains("Depends on #12"));
+    // The bottom PR's body: full list leaf-first, pointer on itself,
+    // trunk in backticks, footer link.
+    let bottom = fs::read_to_string(repo.path().join("edit-body-12.txt")).expect("bottom body");
+    assert!(bottom.contains("Parent PR description."));
+    assert!(bottom.contains("- [Top change (#13)](https://github.com/owner/repo/pull/13)"));
+    assert!(
+        bottom.contains("- [Bottom change (#12)](https://github.com/owner/repo/pull/12) \u{1F448}")
+    );
+    assert!(bottom.contains("- `main`"));
+    assert!(
+        bottom.contains("Stack managed by [git-stk](https://github.com/lararosekelley/git-stk)")
+    );
+
+    // The top PR points at itself instead.
+    let top = fs::read_to_string(repo.path().join("edit-body-13.txt")).expect("top body");
+    assert!(top.contains("- [Top change (#13)](https://github.com/owner/repo/pull/13) \u{1F448}"));
+    assert!(!top.contains("(#12)](https://github.com/owner/repo/pull/12) \u{1F448}"));
 }
 
 #[test]
-fn submit_stack_skips_note_when_already_present() {
+fn submit_stack_repairs_mangled_note_markup() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
@@ -1904,21 +1923,26 @@ fn submit_stack_skips_note_when_already_present() {
         "gh",
         r##"#!/usr/bin/env sh
 case "$*" in
+  pr\ view\ 12*)
+    printf '{"body":"Intro."}\n'
+    ;;
   pr\ view\ 13*)
-    printf '{"body":"Intro.\\n\\n<!-- git-stk:stack -->\\nDepends on #12\\n<!-- /git-stk:stack -->"}\n'
+    printf '{"body":"Intro.\\n\\n<!-- git-stk:stack -->\\nuser deleted the end marker"}\n'
+    ;;
+  pr\ edit\ 12\ --body*)
+    printf '%s\n' "$*" > edit-body-12.txt
     ;;
   pr\ edit\ 13\ --body*)
-    echo "body should not be rewritten when the note is current" >&2
-    exit 1
+    printf '%s\n' "$*" > edit-body-13.txt
     ;;
   pr\ list*feature/a*)
     cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]
 JSON
     ;;
   pr\ list*feature/b*)
     cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]
 JSON
     ;;
   *)
@@ -1934,10 +1958,17 @@ esac
         .env("PATH", path)
         .assert()
         .success();
+
+    let top = fs::read_to_string(repo.path().join("edit-body-13.txt")).expect("top body");
+    assert_eq!(top.matches("<!-- git-stk:stack -->").count(), 1);
+    assert_eq!(top.matches("<!-- /git-stk:stack -->").count(), 1);
+    assert!(top.contains("Intro."));
+    assert!(top.contains("user deleted the end marker"));
+    assert!(top.contains("- [Top change (#13)]"));
 }
 
 #[test]
-fn submit_stack_notes_dependency_in_gitlab_description() {
+fn submit_stack_writes_overview_into_gitlab_descriptions() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "gitlab"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
@@ -1946,20 +1977,26 @@ fn submit_stack_notes_dependency_in_gitlab_description() {
         "glab",
         r##"#!/usr/bin/env sh
 case "$*" in
+  mr\ view\ 34*)
+    printf '{"description":""}\n'
+    ;;
   mr\ view\ 35*)
     printf '{"description":""}\n'
     ;;
   mr\ update\ 35\ --description*)
     printf '%s\n' "$*" > update-description-args.txt
     ;;
+  mr\ update\ 34\ --description*)
+    printf 'updated 34\n'
+    ;;
   mr\ list*feature/a*)
     cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/a","web_url":"https://gitlab.com/owner/repo/-/merge_requests/34"}]
+[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/a","web_url":"https://gitlab.com/owner/repo/-/merge_requests/34","title":"Bottom change"}]
 JSON
     ;;
   mr\ list*feature/b*)
     cat <<'JSON'
-[{"iid":35,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/owner/repo/-/merge_requests/35"}]
+[{"iid":35,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/owner/repo/-/merge_requests/35","title":"Top change"}]
 JSON
     ;;
   *)
@@ -1975,11 +2012,18 @@ esac
         .env("PATH", path)
         .assert()
         .success()
-        .stdout(predicates::str::contains("noted 'Depends on !34' in !35"));
+        .stdout(predicates::str::contains("updated stack note in !35"));
 
     let recorded = fs::read_to_string(repo.path().join("update-description-args.txt"))
         .expect("update description args");
-    assert!(recorded.contains("Depends on !34"));
+    assert!(recorded.contains(
+        "- [Top change (!35)](https://gitlab.com/owner/repo/-/merge_requests/35) \u{1F448}"
+    ));
+    assert!(
+        recorded
+            .contains("- [Bottom change (!34)](https://gitlab.com/owner/repo/-/merge_requests/34)")
+    );
+    assert!(recorded.contains("- `main`"));
 }
 
 #[test]

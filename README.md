@@ -115,6 +115,11 @@ git stk cleanup [branch] [--dry-run] [--delete-branch]
 `-u --force-with-lease` before creating or updating reviews, so new branches exist remotely and rebased
 ones are updated safely.
 
+`submit --stack` also maintains a stack overview at the end of every PR/MR description: the full stack as
+linked bullets (leaf-first, with a pointer on the PR being viewed) sitting on the trunk, plus a footer
+crediting the tool. The section lives between HTML comment markers and self-repairs on the next submit if
+the markup is hand-edited away.
+
 Upgrading:
 
 ```sh
