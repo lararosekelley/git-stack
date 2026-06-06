@@ -46,10 +46,10 @@
 - [x] Simpler version first: "Depends on #123" style links in PR bodies on `submit --stack` - maintained in a
       marker-delimited section (`<!-- git-stk:stack -->`) so resubmits update in place; the full Graphite-style
       stack visualization above can reuse those markers later
-- [ ] `git stk list --markdown`: print the stack in a copy-paste format for sharing with reviewers in
-      Slack/etc. Brief summary at top (e.g. "5 PRs, base main, 3 open / 2 merged"), then an ordered
-      bottom-to-top list of PRs/MRs with title, link, and state per entry. Needs provider review lookups,
-      so it should degrade gracefully (plain branch names) when no reviews exist or `gh`/`glab` is missing
+- [x] `git stk list --markdown`: print the stack in a copy-paste format for sharing with reviewers in
+      Slack/etc. Done: summary line ("2 PRs, base `main`, 1 open / 1 merged"), then the PRs as an ordered
+      bottom-to-top (merge order) list with linked title + number and state. Works from anywhere in the
+      stack via the root walk, and degrades to backticked branch names without reviews or a provider CLI
 - [ ] Better github/gitlab issues support - if a branch name in the stack references an issue number, we
       could include the "Closes <issue>" comment in PR/MR description that I think works to close related
       issues
@@ -77,12 +77,24 @@
 - [x] Ancestry-inference fallback for parent discovery - folded into `repair` (see above); per-command
       fallback is unnecessary now that one command rebuilds everything
 - [ ] Handle branch renames (metadata under `branch.<old>.stackParent` goes stale)
-- [ ] `submit --stack` should work from anywhere in the stack, like Graphite: `gt submit` always includes
-      the downstack (a PR's base needs its own PR), and `--stack` adds the upstack - position never matters,
-      so there's no `git switch` ceremony. For us: walk `stkParent` to the root, then submit root +
-      descendants (the root walk exists in `print_stack`). The one reason NOT to submit everything: WIP
-      upstack branches you don't want PRs for yet - solve later with a `--downstack` scope (or
-      Graphite-style bare-`submit` defaulting to downstack), and/or draft PRs
+- [ ] `submit --stack` AND `restack` should work from anywhere in the stack, like Graphite: `gt submit`
+      always includes the downstack (a PR's base needs its own PR), and `--stack` adds the upstack -
+      position never matters, so there's no `git switch` ceremony. Same root-walk fix for both commands:
+      walk `stkParent` to the root, then operate on root + descendants (the walk exists in `print_stack`).
+      The one reason NOT to submit everything: WIP upstack branches you don't want PRs for yet - solve
+      later with a `--downstack` scope (or Graphite-style bare-`submit` defaulting to downstack), and/or
+      draft PRs. The v0.4.0 merge ceremony made this concrete: restack's current-branch scoping forces one
+      `git switch` per merge round
+- [ ] One-shot merge-loop advance command - the foolproof "I just merged a PR, get me to the next one":
+      check remote state, fetch trunk (`git fetch origin main:main`, no checkout needed), cleanup merged
+      branches (delete + retarget), restack + push the remainder, move me to the new bottom branch, and
+      print the next PR/MR link at the bottom of the remaining stack. Naming: Graphite's equivalent is
+      `gt sync` (fetch trunk + delete merged + restack, though it does NOT check out anything) - our
+      existing `sync` (metadata from review bases) is close in spirit and could absorb this as the
+      Graphite-style one-shot, with metadata refresh as one of its steps. Alternatively `git stk next` if
+      the auto-checkout feels too surprising for `sync`. Open DX questions: should it move HEAD by default
+      or behind a flag/config (`stk.syncCheckout`)? Should it refresh stack overview notes too (see the
+      cleanup note item above - same machinery, natural home)
 - [ ] `git stk guide` command to provide an example to try the tool out?
 
 ## More git automation

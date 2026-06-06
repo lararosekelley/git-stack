@@ -244,6 +244,12 @@ pub fn record_base(branch: &str, parent: &str) {
     }
 }
 
+/// The root of the stack containing `branch` (the base everything sits on).
+pub fn stack_root(branch: &str) -> Result<String> {
+    let parents = parent_map()?;
+    Ok(root_for(branch, &parents))
+}
+
 pub fn branch_and_descendants(branch: &str) -> Result<Vec<String>> {
     let parents = parent_map()?;
     let children = children_map(&parents);
