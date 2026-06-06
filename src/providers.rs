@@ -650,3 +650,112 @@ impl ReviewRequest {
             .unwrap_or(&self.id)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_github_review_reads_first_array_item() {
+        let review = parse_github_review(
+            r#"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"#,
+        )
+        .expect("parse review")
+        .expect("review exists");
+
+        assert_eq!(
+            review,
+            ReviewRequest {
+                id: "#12".to_owned(),
+                branch: "feature/a".to_owned(),
+                base: "main".to_owned(),
+                state: ReviewState::Open,
+                url: "https://github.com/owner/repo/pull/12".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_gitlab_review_reads_snake_case_fields() {
+        let review = parse_gitlab_review(
+            r#"[{"iid":34,"state":"merged","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/owner/repo/-/merge_requests/34"}]"#,
+        )
+        .expect("parse review")
+        .expect("review exists");
+
+        assert_eq!(
+            review,
+            ReviewRequest {
+                id: "!34".to_owned(),
+                branch: "feature/b".to_owned(),
+                base: "feature/a".to_owned(),
+                state: ReviewState::Merged,
+                url: "https://gitlab.com/owner/repo/-/merge_requests/34".to_owned(),
+            }
+        );
+    }
+
+    #[test]
+    fn parse_gitlab_review_reads_camel_case_fields() {
+        let review = parse_gitlab_review(
+            r#"[{"id":34,"state":"closed","targetBranch":"feature/a","sourceBranch":"feature/b","webUrl":"https://gitlab.com/owner/repo/-/merge_requests/34"}]"#,
+        )
+        .expect("parse review")
+        .expect("review exists");
+
+        assert_eq!(review.id, "!34");
+        assert_eq!(review.branch, "feature/b");
+        assert_eq!(review.base, "feature/a");
+        assert_eq!(review.state, ReviewState::Closed);
+        assert_eq!(
+            review.url,
+            "https://gitlab.com/owner/repo/-/merge_requests/34"
+        );
+    }
+
+    #[test]
+    fn parse_review_accepts_object_output() {
+        let review = parse_github_review(
+            r#"{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}"#,
+        )
+        .expect("parse review")
+        .expect("review exists");
+
+        assert_eq!(review.id, "#12");
+    }
+
+    #[test]
+    fn parse_review_empty_array_returns_none() {
+        assert_eq!(parse_github_review("[]").expect("parse review"), None);
+        assert_eq!(parse_gitlab_review("[]").expect("parse review"), None);
+    }
+
+    #[test]
+    fn parse_review_errors_on_missing_required_field() {
+        let error = parse_github_review(
+            r#"[{"number":12,"state":"OPEN","baseRefName":"main","url":"https://github.com/owner/repo/pull/12"}]"#,
+        )
+        .expect_err("missing head branch should fail");
+
+        assert!(
+            error
+                .to_string()
+                .contains("provider JSON missing required field: headRefName"),
+            "unexpected error: {error:#}"
+        );
+    }
+
+    #[test]
+    fn parse_review_preserves_unknown_state() {
+        let review = parse_github_review(
+            r#"[{"number":12,"state":"READY_FOR_REVIEW","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"#,
+        )
+        .expect("parse review")
+        .expect("review exists");
+
+        assert_eq!(
+            review.state,
+            ReviewState::Unknown("READY_FOR_REVIEW".to_owned())
+        );
+    }
+}
