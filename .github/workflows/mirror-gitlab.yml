@@ -35,7 +35,9 @@ jobs:
           git remote add gitlab "https://oauth2:${GITLAB_MIRROR_TOKEN}@gitlab.com/lararosekelley/git-stk-mirror.git"
 
           if [ "$GITHUB_REF_TYPE" = "branch" ]; then
-            git push gitlab main:main
+            # Force so the read-only mirror tracks the canonical repo even
+            # after history rewrites on main.
+            git push --force gitlab main:main
           fi
 
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
