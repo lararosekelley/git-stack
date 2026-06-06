@@ -1,4 +1,9 @@
+<img src="https://raw.githubusercontent.com/lararosekelley/git-stk/main/assets/logo.svg"
+     width="48" height="48" alt="git-stk logo" />
+
 # git-stk
+
+[![crates.io](https://img.shields.io/crates/v/git-stk?color=cc6699)](https://crates.io/crates/git-stk)
 
 > Git-native stacked branch workflow helper with GitHub and GitLab review integration.
 

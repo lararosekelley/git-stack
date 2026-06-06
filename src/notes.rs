@@ -8,6 +8,8 @@ use crate::providers::{ReviewProvider, ReviewRequest};
 const STACK_NOTE_START: &str = "<!-- git-stk:stack -->";
 const STACK_NOTE_END: &str = "<!-- /git-stk:stack -->";
 const TOOL_URL: &str = "https://github.com/lararosekelley/git-stk";
+const LOGO_URL: &str =
+    "https://raw.githubusercontent.com/lararosekelley/git-stk/main/assets/logo.svg";
 
 /// Maintain a stack overview in every review body: the full PR list
 /// leaf-first, the trunk at the bottom, and a pointing emoji marking the
@@ -80,7 +82,9 @@ fn build_stack_note(entries: &[ReviewRequest], current: usize, trunk: &str) -> S
     lines.push(format!("- `{trunk}`"));
 
     format!(
-        "{}\n\n---\n\nStack managed by [git-stk]({TOOL_URL})",
+        "{}\n\n---\n\nStack managed by \
+         <img src=\"{LOGO_URL}\" width=\"12\" height=\"12\" alt=\"\" /> \
+         [git-stk]({TOOL_URL})",
         lines.join("\n")
     )
 }
@@ -153,7 +157,10 @@ mod tests {
              - [Bottom change (#12)](https://example.com/12) \u{1F448}\n\
              - `main`\n\n\
              ---\n\n\
-             Stack managed by [git-stk](https://github.com/lararosekelley/git-stk)"
+             Stack managed by \
+             <img src=\"https://raw.githubusercontent.com/lararosekelley/git-stk/main/assets/logo.svg\" \
+             width=\"12\" height=\"12\" alt=\"\" /> \
+             [git-stk](https://github.com/lararosekelley/git-stk)"
         );
     }
 
