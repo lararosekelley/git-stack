@@ -8,14 +8,11 @@ use anyhow::{Context, Result, bail};
 
 use crate::cli::{PushMode, UpdateRefsMode};
 use crate::git;
+use crate::settings;
 
 const PARENT_KEY: &str = "stkParent";
 const BASE_KEY: &str = "stkBase";
 const STATE_FILE: &str = "stack-state";
-const PUSH_ON_RESTACK_KEY: &str = "stk.pushOnRestack";
-const UPDATE_REFS_KEY: &str = "stk.updateRefs";
-const REMOTE_KEY: &str = "stk.remote";
-const DEFAULT_REMOTE: &str = "origin";
 
 pub fn create_branch(branch: &str) -> Result<()> {
     let parent = git::current_branch()?;
@@ -110,10 +107,7 @@ pub fn print_stack() -> Result<()> {
 /// The trunk branch: the remote's default branch when known locally,
 /// otherwise a conventional name that exists.
 pub fn trunk_branch(branches: &[String]) -> Option<String> {
-    let remote = git::config_get(REMOTE_KEY)
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| DEFAULT_REMOTE.to_owned());
+    let remote = settings::remote().unwrap_or_else(|_| settings::DEFAULT_REMOTE.to_owned());
     if let Some(default) = git::remote_default_branch(&remote) {
         return Some(default);
     }
@@ -164,7 +158,7 @@ pub fn restack(update_refs_mode: UpdateRefsMode, push_mode: PushMode) -> Result<
     }
 
     let update_refs = resolve_update_refs(update_refs_mode)?;
-    let push = resolve_push(push_mode)?;
+    let push = settings::push_enabled(push_mode, settings::PUSH_ON_RESTACK_KEY)?;
 
     clear_state()?;
     let all = branches.clone();
@@ -354,7 +348,7 @@ fn restack_branches(
 fn finish_restack(branches: &[String], push: bool) -> Result<()> {
     println!("restack complete");
 
-    let remote = git::config_get(REMOTE_KEY)?.unwrap_or_else(|| DEFAULT_REMOTE.to_owned());
+    let remote = settings::remote()?;
     if push {
         git::push_force_with_lease(&remote, branches)?;
         println!("pushed {} to {remote}", branches.join(" "));
@@ -368,18 +362,10 @@ fn finish_restack(branches: &[String], push: bool) -> Result<()> {
     Ok(())
 }
 
-fn resolve_push(mode: PushMode) -> Result<bool> {
-    match mode {
-        PushMode::Config => Ok(git::config_get_bool(PUSH_ON_RESTACK_KEY)?.unwrap_or(false)),
-        PushMode::Enabled => Ok(true),
-        PushMode::Disabled => Ok(false),
-    }
-}
-
 fn resolve_update_refs(mode: UpdateRefsMode) -> Result<bool> {
     match mode {
         UpdateRefsMode::Config => {
-            let configured = git::config_get_bool(UPDATE_REFS_KEY)?.unwrap_or(false);
+            let configured = git::config_get_bool(settings::UPDATE_REFS_KEY)?.unwrap_or(false);
             if configured && !git::supports_rebase_update_refs()? {
                 eprintln!("stk.updateRefs is true, but this Git does not support --update-refs");
                 return Ok(false);
