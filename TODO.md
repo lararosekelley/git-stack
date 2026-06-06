@@ -79,11 +79,11 @@
 - [ ] Should we handle pushing so it's not a manual step or doesn't have to be? Instead of
       `git push -u <list of all branches in stack>`, perhaps submit could be configured via
       `config.stk.pushOnSubmit` perhaps?
-- [ ] Same question for `restack`: offer `--push` / config to force-with-lease push rebased branches.
-      LESSON from the first real merge cycle: restack rewrites the whole remaining stack, and a bare
-      `git push --force-with-lease` afterwards only pushes the CURRENT branch (which restack leaves at the
-      top) - stale PR diffs for everything in between. The tool knows exactly which branches it just
-      rewrote; it should push them (or at least print the exact push command for all of them)
+- [x] Same question for `restack`: offer `--push` / config to force-with-lease push rebased branches.
+      Done: `restack --push` / `--no-push` with `stack.pushOnRestack` config fallback force-pushes (with
+      lease) every rebased branch, including after a conflicted restack finishes via `continue` (the state
+      file now carries the full branch list). Without it, restack prints the exact push command - the
+      stale-PR-diff trap from the first merge cycle is now impossible to hit silently
 - [x] `cleanup --delete-branch` uses `git branch -d`, which can REFUSE after a squash merge (commits are not
       ancestry-merged; it only worked for us because the branch matched its un-pruned upstream). Fixed: uses
       `-D` now, justified by provider-verified merge state - strictly better information than git's ancestry

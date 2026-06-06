@@ -6,12 +6,15 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 
-use crate::cli::UpdateRefsMode;
+use crate::cli::{PushMode, UpdateRefsMode};
 use crate::git;
 
 const PARENT_KEY: &str = "stackParent";
 const BASE_KEY: &str = "stackBase";
 const STATE_FILE: &str = "stack-state";
+const PUSH_ON_RESTACK_KEY: &str = "stack.pushOnRestack";
+const REMOTE_KEY: &str = "stack.remote";
+const DEFAULT_REMOTE: &str = "origin";
 
 pub fn create_branch(branch: &str) -> Result<()> {
     let parent = git::current_branch()?;
@@ -115,7 +118,7 @@ pub fn detach_branch(branch: Option<&str>) -> Result<()> {
     Ok(())
 }
 
-pub fn restack(update_refs_mode: UpdateRefsMode) -> Result<()> {
+pub fn restack(update_refs_mode: UpdateRefsMode, push_mode: PushMode) -> Result<()> {
     let current = git::current_branch()?;
     let parents = parent_map()?;
     let branches = restack_order(&current, &parents);
@@ -126,9 +129,11 @@ pub fn restack(update_refs_mode: UpdateRefsMode) -> Result<()> {
     }
 
     let update_refs = resolve_update_refs(update_refs_mode)?;
+    let push = resolve_push(push_mode)?;
 
     clear_state()?;
-    restack_branches(branches, &parents, update_refs)
+    let all = branches.clone();
+    restack_branches(branches, &parents, update_refs, push, &all)
 }
 
 pub fn continue_restack() -> Result<()> {
@@ -147,12 +152,18 @@ pub fn continue_restack() -> Result<()> {
 
     if state.remaining.is_empty() {
         clear_state()?;
-        println!("restack complete");
+        finish_restack(&state.all, state.push)?;
         return Ok(());
     }
 
     let parents = parent_map()?;
-    restack_branches(state.remaining, &parents, state.update_refs)
+    restack_branches(
+        state.remaining,
+        &parents,
+        state.update_refs,
+        state.push,
+        &state.all,
+    )
 }
 
 pub fn abort_restack() -> Result<()> {
@@ -241,6 +252,8 @@ fn restack_branches(
     branches: Vec<String>,
     parents: &BTreeMap<String, String>,
     update_refs: bool,
+    push: bool,
+    all: &[String],
 ) -> Result<()> {
     for (index, branch) in branches.iter().enumerate() {
         let Some(parent) = parents.get(branch) else {
@@ -273,6 +286,8 @@ fn restack_branches(
                 parent: parent.to_owned(),
                 remaining,
                 update_refs,
+                push,
+                all: all.to_vec(),
             }
             .write()?;
 
@@ -286,8 +301,34 @@ fn restack_branches(
     }
 
     clear_state()?;
+    finish_restack(all, push)
+}
+
+/// After every branch has been rebased: push the rewritten branches, or print
+/// the exact command so stale remote PR diffs are a copy-paste away from fixed.
+fn finish_restack(branches: &[String], push: bool) -> Result<()> {
     println!("restack complete");
+
+    let remote = git::config_get(REMOTE_KEY)?.unwrap_or_else(|| DEFAULT_REMOTE.to_owned());
+    if push {
+        git::push_force_with_lease(&remote, branches)?;
+        println!("pushed {} to {remote}", branches.join(" "));
+    } else {
+        println!("remote branches may be stale; push them with:");
+        println!(
+            "  git push --force-with-lease {remote} {}",
+            branches.join(" ")
+        );
+    }
     Ok(())
+}
+
+fn resolve_push(mode: PushMode) -> Result<bool> {
+    match mode {
+        PushMode::Config => Ok(git::config_get_bool(PUSH_ON_RESTACK_KEY)?.unwrap_or(false)),
+        PushMode::Enabled => Ok(true),
+        PushMode::Disabled => Ok(false),
+    }
 }
 
 fn resolve_update_refs(mode: UpdateRefsMode) -> Result<bool> {
@@ -398,6 +439,10 @@ struct RestackState {
     parent: String,
     remaining: Vec<String>,
     update_refs: bool,
+    push: bool,
+    /// Every branch in the interrupted restack, so the post-restack push (or
+    /// push hint) can cover branches rebased before the conflict too.
+    all: Vec<String>,
 }
 
 impl RestackState {
@@ -413,6 +458,8 @@ impl RestackState {
         let mut parent = None;
         let mut remaining = Vec::new();
         let mut update_refs = false;
+        let mut push = false;
+        let mut all = Vec::new();
 
         for line in contents.lines() {
             if let Some(value) = line.strip_prefix("branch=") {
@@ -421,8 +468,16 @@ impl RestackState {
                 parent = Some(value.to_owned());
             } else if let Some(value) = line.strip_prefix("updateRefs=") {
                 update_refs = value == "true";
+            } else if let Some(value) = line.strip_prefix("push=") {
+                push = value == "true";
             } else if let Some(value) = line.strip_prefix("remaining=") {
                 remaining = value
+                    .split('\t')
+                    .filter(|branch| !branch.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+            } else if let Some(value) = line.strip_prefix("all=") {
+                all = value
                     .split('\t')
                     .filter(|branch| !branch.is_empty())
                     .map(str::to_owned)
@@ -442,17 +497,21 @@ impl RestackState {
             parent,
             remaining,
             update_refs,
+            push,
+            all,
         }))
     }
 
     fn write(&self) -> Result<()> {
         let path = state_path()?;
         let contents = format!(
-            "branch={}\nparent={}\nupdateRefs={}\nremaining={}\n",
+            "branch={}\nparent={}\nupdateRefs={}\npush={}\nremaining={}\nall={}\n",
             self.branch,
             self.parent,
             self.update_refs,
-            self.remaining.join("\t")
+            self.push,
+            self.remaining.join("\t"),
+            self.all.join("\t")
         );
         fs::write(&path, contents).with_context(|| format!("failed to write {}", path.display()))
     }
