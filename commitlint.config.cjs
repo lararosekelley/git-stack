@@ -20,6 +20,7 @@ module.exports = {
         "release",
         "tooling",
         "shell",
+        "config",
       ],
     ],
   },

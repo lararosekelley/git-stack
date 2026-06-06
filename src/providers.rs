@@ -5,9 +5,9 @@ use serde_json::Value;
 
 use crate::{git, stack};
 
-const PROVIDER_KEY: &str = "stack.provider";
-const REMOTE_KEY: &str = "stack.remote";
-const PUSH_ON_SUBMIT_KEY: &str = "stack.pushOnSubmit";
+const PROVIDER_KEY: &str = "stk.provider";
+const REMOTE_KEY: &str = "stk.remote";
+const PUSH_ON_SUBMIT_KEY: &str = "stk.pushOnSubmit";
 const DEFAULT_REMOTE: &str = "origin";
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -698,7 +698,7 @@ enum SubmitAction {
 pub fn detect_provider() -> Result<DetectedProvider> {
     if let Some(value) = git::config_get(PROVIDER_KEY)? {
         let Some(kind) = ProviderKind::parse(&value) else {
-            bail!("unsupported stack.provider value {value:?}; expected github or gitlab");
+            bail!("unsupported stk.provider value {value:?}; expected github or gitlab");
         };
 
         return Ok(DetectedProvider {
@@ -827,7 +827,7 @@ fn parse_state(state: &str) -> ReviewState {
 }
 
 fn parent_key(branch: &str) -> String {
-    format!("branch.{branch}.stackParent")
+    format!("branch.{branch}.stkParent")
 }
 
 impl fmt::Display for ReviewState {
