@@ -1,8 +1,10 @@
-use anyhow::Result;
+use anyhow::{Result, bail};
 use clap_complete::engine::ArgValueCompleter;
 
 use crate::commands::Run;
 use crate::completions;
+use crate::git;
+use crate::providers::{detect_provider, review_provider};
 
 /// Print the review request for a branch.
 #[derive(Debug, clap::Args)]
@@ -13,6 +15,24 @@ pub struct Review {
 
 impl Run for Review {
     fn run(self) -> Result<()> {
-        crate::providers::print_review(self.branch.as_deref())
+        print_review(self.branch.as_deref())
     }
+}
+
+pub fn print_review(branch: Option<&str>) -> Result<()> {
+    let branch = branch
+        .map(str::to_owned)
+        .map_or_else(git::current_branch, Ok)?;
+    let provider = detect_provider()?;
+    let review_provider = review_provider(provider.kind);
+
+    let Some(review) = review_provider.review_for_branch(&branch)? else {
+        bail!("no {} review found for {branch}", provider.kind);
+    };
+
+    println!(
+        "{} {} -> {} {} {}",
+        review.id, review.branch, review.base, review.state, review.url
+    );
+    Ok(())
 }
