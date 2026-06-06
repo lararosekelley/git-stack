@@ -1,0 +1,422 @@
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::PathBuf,
+};
+
+use anyhow::{Context, Result, bail};
+
+use crate::cli::UpdateRefsMode;
+use crate::git;
+
+const PARENT_KEY: &str = "stackParent";
+const STATE_FILE: &str = "stack-state";
+
+pub fn create_branch(branch: &str) -> Result<()> {
+    let parent = git::current_branch()?;
+    git::create_branch(branch)?;
+    set_parent(branch, &parent)?;
+    println!("created {branch} with parent {parent}");
+    Ok(())
+}
+
+pub fn print_parent(branch: Option<&str>) -> Result<()> {
+    let branch = branch
+        .map(str::to_owned)
+        .map_or_else(git::current_branch, Ok)?;
+    match parent_of(&branch)? {
+        Some(parent) => println!("{parent}"),
+        None => bail!("{branch} has no stack parent"),
+    }
+    Ok(())
+}
+
+pub fn print_children(branch: Option<&str>) -> Result<()> {
+    let branch = branch
+        .map(str::to_owned)
+        .map_or_else(git::current_branch, Ok)?;
+    for child in children_of(&branch)? {
+        println!("{child}");
+    }
+    Ok(())
+}
+
+pub fn checkout_parent() -> Result<()> {
+    let current = git::current_branch()?;
+    let Some(parent) = parent_of(&current)? else {
+        bail!("{current} has no stack parent");
+    };
+
+    git::checkout(&parent)
+}
+
+pub fn checkout_child(branch: Option<&str>) -> Result<()> {
+    let current = git::current_branch()?;
+    let children = children_of(&current)?;
+    let child = match (branch, children.as_slice()) {
+        (Some(branch), _) => {
+            if children.iter().any(|child| child == branch) {
+                branch.to_owned()
+            } else {
+                bail!("{branch} is not a stack child of {current}");
+            }
+        }
+        (None, [child]) => child.to_owned(),
+        (None, []) => bail!("{current} has no stack children"),
+        (None, _) => {
+            eprintln!("{current} has multiple stack children:");
+            for child in children {
+                eprintln!("  {child}");
+            }
+            bail!("choose one with `git stack down <branch>`");
+        }
+    };
+
+    git::checkout(&child)
+}
+
+pub fn print_stack() -> Result<()> {
+    let current = git::current_branch()?;
+    let parents = parent_map()?;
+    let root = root_for(&current, &parents);
+    let children = children_map(&parents);
+    print_tree(&root, &current, &children, 0, &mut BTreeSet::new());
+    Ok(())
+}
+
+pub fn adopt_branch(branch: &str, parent: &str) -> Result<()> {
+    if branch == parent {
+        bail!("a branch cannot be its own stack parent");
+    }
+
+    let branches: BTreeSet<_> = git::local_branches()?.into_iter().collect();
+    if !branches.contains(branch) {
+        bail!("branch {branch} does not exist");
+    }
+    if !branches.contains(parent) {
+        bail!("parent branch {parent} does not exist");
+    }
+
+    set_parent(branch, parent)?;
+    println!("attached {branch} to {parent}");
+    Ok(())
+}
+
+pub fn detach_branch(branch: Option<&str>) -> Result<()> {
+    let branch = branch
+        .map(str::to_owned)
+        .map_or_else(git::current_branch, Ok)?;
+    unset_parent(&branch)?;
+    println!("detached {branch}");
+    Ok(())
+}
+
+pub fn restack(update_refs_mode: UpdateRefsMode) -> Result<()> {
+    let current = git::current_branch()?;
+    let parents = parent_map()?;
+    let branches = restack_order(&current, &parents);
+
+    if branches.is_empty() {
+        println!("nothing to restack");
+        return Ok(());
+    }
+
+    let update_refs = resolve_update_refs(update_refs_mode)?;
+
+    clear_state()?;
+    restack_branches(branches, &parents, update_refs)
+}
+
+pub fn continue_restack() -> Result<()> {
+    let Some(state) = RestackState::read()? else {
+        bail!("no interrupted restack found");
+    };
+
+    if let Err(error) = git::rebase_continue() {
+        eprintln!("restack still has conflicts");
+        eprintln!("resolve conflicts, then run `git stack continue`");
+        eprintln!("or run `git stack abort`");
+        return Err(error);
+    }
+
+    if state.remaining.is_empty() {
+        clear_state()?;
+        println!("restack complete");
+        return Ok(());
+    }
+
+    let parents = parent_map()?;
+    restack_branches(state.remaining, &parents, state.update_refs)
+}
+
+pub fn abort_restack() -> Result<()> {
+    git::rebase_abort()?;
+    clear_state()?;
+    println!("restack aborted");
+    Ok(())
+}
+
+pub fn parent_for_branch(branch: &str) -> Result<Option<String>> {
+    parent_of(branch)
+}
+
+pub fn children_for_branch(branch: &str) -> Result<Vec<String>> {
+    children_of(branch)
+}
+
+pub fn set_parent_for_branch(branch: &str, parent: &str) -> Result<()> {
+    set_parent(branch, parent)
+}
+
+pub fn unset_parent_for_branch(branch: &str) -> Result<()> {
+    unset_parent(branch)
+}
+
+pub fn branch_and_descendants(branch: &str) -> Result<Vec<String>> {
+    let parents = parent_map()?;
+    let children = children_map(&parents);
+    let mut branches = vec![branch.to_owned()];
+    collect_descendants(branch, &children, &mut branches);
+    Ok(branches)
+}
+
+fn parent_map() -> Result<BTreeMap<String, String>> {
+    let mut parents = BTreeMap::new();
+    for branch in git::local_branches()? {
+        if let Some(parent) = parent_of(&branch)? {
+            parents.insert(branch, parent);
+        }
+    }
+    Ok(parents)
+}
+
+fn restack_order(current: &str, parents: &BTreeMap<String, String>) -> Vec<String> {
+    let children = children_map(parents);
+    let mut branches = Vec::new();
+
+    if parents.contains_key(current) {
+        branches.push(current.to_owned());
+    }
+
+    collect_descendants(current, &children, &mut branches);
+    branches
+}
+
+fn collect_descendants(
+    branch: &str,
+    children: &BTreeMap<String, Vec<String>>,
+    branches: &mut Vec<String>,
+) {
+    if let Some(branch_children) = children.get(branch) {
+        for child in branch_children {
+            branches.push(child.to_owned());
+            collect_descendants(child, children, branches);
+        }
+    }
+}
+
+fn restack_branches(
+    branches: Vec<String>,
+    parents: &BTreeMap<String, String>,
+    update_refs: bool,
+) -> Result<()> {
+    for (index, branch) in branches.iter().enumerate() {
+        let Some(parent) = parents.get(branch) else {
+            bail!("{branch} has no stack parent");
+        };
+
+        if update_refs {
+            println!("rebasing {branch} onto {parent} with --update-refs");
+        } else {
+            println!("rebasing {branch} onto {parent}");
+        }
+
+        if let Err(error) = git::rebase(parent, branch, update_refs) {
+            let remaining = branches[index + 1..].to_vec();
+            RestackState {
+                branch: branch.to_owned(),
+                parent: parent.to_owned(),
+                remaining,
+                update_refs,
+            }
+            .write()?;
+
+            eprintln!("conflict while rebasing {branch} onto {parent}");
+            eprintln!("resolve conflicts, then run `git stack continue`");
+            eprintln!("or run `git stack abort`");
+            return Err(error);
+        }
+    }
+
+    clear_state()?;
+    println!("restack complete");
+    Ok(())
+}
+
+fn resolve_update_refs(mode: UpdateRefsMode) -> Result<bool> {
+    match mode {
+        UpdateRefsMode::Config => {
+            let configured = git::config_get_bool("rebase.updateRefs")?.unwrap_or(false);
+            if configured && !git::supports_rebase_update_refs()? {
+                eprintln!("rebase.updateRefs is true, but this Git does not support --update-refs");
+                return Ok(false);
+            }
+            Ok(configured)
+        }
+        UpdateRefsMode::Enabled => {
+            if !git::supports_rebase_update_refs()? {
+                bail!("--update-refs was requested, but this Git does not support it");
+            }
+            Ok(true)
+        }
+        UpdateRefsMode::Disabled => Ok(false),
+    }
+}
+
+fn children_of(parent: &str) -> Result<Vec<String>> {
+    Ok(parent_map()?
+        .into_iter()
+        .filter_map(|(branch, branch_parent)| (branch_parent == parent).then_some(branch))
+        .collect())
+}
+
+fn children_map(parents: &BTreeMap<String, String>) -> BTreeMap<String, Vec<String>> {
+    let mut children: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (branch, parent) in parents {
+        children
+            .entry(parent.to_owned())
+            .or_default()
+            .push(branch.to_owned());
+    }
+    children
+}
+
+fn root_for(branch: &str, parents: &BTreeMap<String, String>) -> String {
+    let mut root = branch.to_owned();
+    let mut seen = BTreeSet::new();
+
+    while let Some(parent) = parents.get(&root) {
+        if !seen.insert(root.clone()) {
+            break;
+        }
+        root = parent.to_owned();
+    }
+
+    root
+}
+
+fn print_tree(
+    branch: &str,
+    current: &str,
+    children: &BTreeMap<String, Vec<String>>,
+    depth: usize,
+    seen: &mut BTreeSet<String>,
+) {
+    let marker = if branch == current { " *" } else { "" };
+    println!("{}{}{}", "  ".repeat(depth), branch, marker);
+
+    if !seen.insert(branch.to_owned()) {
+        println!("{}<cycle detected>", "  ".repeat(depth + 1));
+        return;
+    }
+
+    if let Some(branch_children) = children.get(branch) {
+        for child in branch_children {
+            print_tree(child, current, children, depth + 1, seen);
+        }
+    }
+}
+
+fn parent_of(branch: &str) -> Result<Option<String>> {
+    git::config_get(&parent_key(branch))
+}
+
+fn set_parent(branch: &str, parent: &str) -> Result<()> {
+    git::config_set(&parent_key(branch), parent)
+}
+
+fn unset_parent(branch: &str) -> Result<()> {
+    git::config_unset(&parent_key(branch))
+}
+
+fn parent_key(branch: &str) -> String {
+    format!("branch.{branch}.{PARENT_KEY}")
+}
+
+#[derive(Debug, Eq, PartialEq)]
+struct RestackState {
+    branch: String,
+    parent: String,
+    remaining: Vec<String>,
+    update_refs: bool,
+}
+
+impl RestackState {
+    fn read() -> Result<Option<Self>> {
+        let path = state_path()?;
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let contents = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let mut branch = None;
+        let mut parent = None;
+        let mut remaining = Vec::new();
+        let mut update_refs = false;
+
+        for line in contents.lines() {
+            if let Some(value) = line.strip_prefix("branch=") {
+                branch = Some(value.to_owned());
+            } else if let Some(value) = line.strip_prefix("parent=") {
+                parent = Some(value.to_owned());
+            } else if let Some(value) = line.strip_prefix("updateRefs=") {
+                update_refs = value == "true";
+            } else if let Some(value) = line.strip_prefix("remaining=") {
+                remaining = value
+                    .split('\t')
+                    .filter(|branch| !branch.is_empty())
+                    .map(str::to_owned)
+                    .collect();
+            }
+        }
+
+        let Some(branch) = branch else {
+            bail!("restack state is missing current branch");
+        };
+        let Some(parent) = parent else {
+            bail!("restack state is missing parent branch");
+        };
+
+        Ok(Some(Self {
+            branch,
+            parent,
+            remaining,
+            update_refs,
+        }))
+    }
+
+    fn write(&self) -> Result<()> {
+        let path = state_path()?;
+        let contents = format!(
+            "branch={}\nparent={}\nupdateRefs={}\nremaining={}\n",
+            self.branch,
+            self.parent,
+            self.update_refs,
+            self.remaining.join("\t")
+        );
+        fs::write(&path, contents).with_context(|| format!("failed to write {}", path.display()))
+    }
+}
+
+fn clear_state() -> Result<()> {
+    let path = state_path()?;
+    if path.exists() {
+        fs::remove_file(&path).with_context(|| format!("failed to remove {}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn state_path() -> Result<PathBuf> {
+    Ok(PathBuf::from(git::git_path(STATE_FILE)?))
+}
