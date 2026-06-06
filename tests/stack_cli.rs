@@ -1448,3 +1448,35 @@ fn completions_rejects_unknown_shell() {
         .assert()
         .failure();
 }
+
+#[test]
+fn completions_bash_shim_completes_git_stk_subcommands() {
+    let repo = TestRepo::new();
+
+    let output = repo.stack_output(["completions", "bash"]).stdout;
+    let script_path = repo.path().join("completions.bash");
+    fs::write(&script_path, output).expect("write completions script");
+
+    // Simulate `git stk re<TAB>` the way git's completion would: set up the
+    // completion environment and invoke the _git_stk shim directly.
+    let harness = format!(
+        r#"source "{}"
+COMP_WORDS=(git stk re)
+COMP_CWORD=2
+_git_stk
+printf '%s\n' "${{COMPREPLY[@]}}"
+"#,
+        script_path.display()
+    );
+    let result = Command::new("bash")
+        .args(["-c", &harness])
+        .output()
+        .expect("run bash completion harness");
+
+    assert!(result.status.success());
+    let completions = String::from_utf8_lossy(&result.stdout);
+    assert!(
+        completions.contains("restack") && completions.contains("review"),
+        "expected restack/review completions for `git stk re`, got: {completions}"
+    );
+}
