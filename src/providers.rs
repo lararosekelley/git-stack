@@ -283,6 +283,7 @@ pub fn sync_stack(branch: Option<&str>, dry_run: bool) -> Result<()> {
 
         if !dry_run {
             git::config_set(&parent_key(&branch), &review.base)?;
+            stack::record_base(&branch, &review.base);
         }
         println!(
             "{} {} -> {} ({})",
@@ -393,6 +394,12 @@ fn cleanup_merged_branch(
                 );
                 update_child_review_base(review_provider, &child, parent, dry_run)?;
                 if !dry_run {
+                    // Record the fork point off the merged branch before
+                    // retargeting, so the next restack replays only the
+                    // child's own commits even after a squash merge.
+                    if let Ok(base) = git::merge_base(branch, &child) {
+                        stack::set_base_for_branch(&child, &base)?;
+                    }
                     stack::set_parent_for_branch(&child, parent)?;
                 }
             }
@@ -400,6 +407,7 @@ fn cleanup_merged_branch(
                 println!("{} detach {child}", if dry_run { "would" } else { "will" });
                 if !dry_run {
                     stack::unset_parent_for_branch(&child)?;
+                    stack::unset_base_for_branch(&child)?;
                 }
             }
         }
@@ -408,6 +416,7 @@ fn cleanup_merged_branch(
     println!("{} detach {branch}", if dry_run { "would" } else { "will" });
     if !dry_run {
         stack::unset_parent_for_branch(branch)?;
+        stack::unset_base_for_branch(branch)?;
     }
 
     Ok(())

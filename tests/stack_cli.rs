@@ -319,7 +319,10 @@ fn restack_records_state_when_rebase_conflicts() {
     repo.commit_file("conflict.txt", "parent\n", "parent edits conflict file");
 
     repo.stack().args(["new", "feature/b"]).assert().success();
-    repo.commit_file("child.txt", "child\n", "child edits another file");
+    // The child's own commit touches the conflicting file, so the conflict
+    // survives base-aware restacking (a parent rewrite alone no longer
+    // conflicts: only the child's own commits are replayed).
+    repo.commit_file("conflict.txt", "parent\nchild\n", "child edits same file");
 
     repo.git(["switch", "feature/a"]);
     repo.git(["reset", "--hard", "HEAD~1"]);
@@ -359,7 +362,9 @@ fn continue_resumes_restack_after_conflict_resolution() {
     repo.commit_file("conflict.txt", "parent\n", "parent edits conflict file");
 
     repo.stack().args(["new", "feature/b"]).assert().success();
-    repo.commit_file("child.txt", "child\n", "child edits another file");
+    // Conflict must come from the child's own commit; see
+    // restack_records_state_when_rebase_conflicts.
+    repo.commit_file("conflict.txt", "parent\nchild\n", "child edits same file");
 
     repo.git(["switch", "feature/a"]);
     repo.git(["reset", "--hard", "HEAD~1"]);
@@ -371,7 +376,7 @@ fn continue_resumes_restack_after_conflict_resolution() {
 
     repo.stack().arg("restack").assert().failure();
 
-    repo.write("conflict.txt", "updated parent\n");
+    repo.write("conflict.txt", "updated parent\nchild\n");
     repo.git(["add", "conflict.txt"]);
 
     repo.stack()
@@ -388,9 +393,13 @@ fn continue_resumes_restack_after_conflict_resolution() {
     assert_eq!(repo.git(["branch", "--show-current"]), "feature/b");
 
     let conflict_file = fs::read_to_string(repo.path().join("conflict.txt")).expect("read file");
-    assert_eq!(conflict_file, "updated parent\n");
-    let child_file = fs::read_to_string(repo.path().join("child.txt")).expect("read child file");
-    assert_eq!(child_file, "child\n");
+    assert_eq!(conflict_file, "updated parent\nchild\n");
+
+    // continue must refresh the recorded fork point to the new parent tip
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stackBase"]),
+        parent_head
+    );
 }
 
 #[test]
@@ -1669,4 +1678,150 @@ exit 1
         .stderr(predicates::str::contains(
             "failed to refresh generated assets",
         ));
+}
+
+#[test]
+fn restack_after_squash_merge_replays_only_child_commits() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.provider", "github"]);
+
+    // Parent stack: two commits on feature/a so git's patch-id auto-skip
+    // cannot save a naive rebase after the squash merge.
+    repo.commit_file("shared.txt", "base\n", "add shared file");
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("shared.txt", "base\none\n", "parent change one");
+    repo.commit_file("shared.txt", "base\none\ntwo\n", "parent change two");
+
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("shared.txt", "base\none\ntwo\nchild\n", "child change");
+
+    // Simulate GitHub squash-merging feature/a into main.
+    repo.git(["switch", "main"]);
+    repo.git(["merge", "--squash", "feature/a"]);
+    repo.git(["commit", "-m", "parent changes (#1)"]);
+
+    // cleanup: feature/a merged -> retarget feature/b to main, record fork point.
+    let old_parent_tip = repo.git(["rev-parse", "feature/a"]);
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/a\ --state\ merged*)
+    cat <<'JSON'
+[{"number":1,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/1"}]
+JSON
+    ;;
+  *feature/a*)
+    printf '[]\n'
+    ;;
+  *feature/b*)
+    cat <<'JSON'
+[{"number":2,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/2"}]
+JSON
+    ;;
+  pr\ edit*)
+    printf 'updated child review\n'
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["cleanup", "feature/a"])
+        .env("PATH", path)
+        .assert()
+        .success();
+
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stackParent"]),
+        "main"
+    );
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stackBase"]),
+        old_parent_tip
+    );
+
+    // Without the recorded fork point this rebase replays the parent's
+    // commits onto the squashed main and conflicts. With it, only the
+    // child's own commit replays, cleanly.
+    repo.git(["switch", "feature/b"]);
+    repo.stack()
+        .arg("restack")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("restack complete"));
+
+    let own_commits = repo.git(["rev-list", "--count", "main..feature/b"]);
+    assert_eq!(own_commits, "1");
+    let shared = fs::read_to_string(repo.path().join("shared.txt")).expect("read shared file");
+    assert_eq!(shared, "base\none\ntwo\nchild\n");
+}
+
+#[test]
+fn new_and_restack_record_stack_base() {
+    let repo = TestRepo::new();
+
+    let main_tip = repo.git(["rev-parse", "main"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/a.stackBase"]),
+        main_tip
+    );
+
+    repo.commit_file("a.txt", "a\n", "feature work");
+    repo.git(["switch", "main"]);
+    repo.commit_file("main.txt", "main\n", "main moves on");
+
+    repo.git(["switch", "feature/a"]);
+    repo.stack().arg("restack").assert().success();
+
+    let new_main_tip = repo.git(["rev-parse", "main"]);
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/a.stackBase"]),
+        new_main_tip
+    );
+}
+
+#[test]
+fn restack_falls_back_to_plain_rebase_when_base_is_invalid() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "feature work");
+    repo.git([
+        "config",
+        "branch.feature/a.stackBase",
+        "0000000000000000000000000000000000000000",
+    ]);
+
+    repo.git(["switch", "main"]);
+    repo.commit_file("main.txt", "main\n", "main moves on");
+    repo.git(["switch", "feature/a"]);
+
+    repo.stack()
+        .arg("restack")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("restack complete"));
+
+    let merge_base = repo.git(["merge-base", "main", "feature/a"]);
+    assert_eq!(merge_base, repo.git(["rev-parse", "main"]));
+}
+
+#[test]
+fn detach_clears_stack_base() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["detach"]).assert().success();
+
+    assert_eq!(
+        repo.git_status(["config", "--get", "branch.feature/a.stackBase"])
+            .status
+            .code(),
+        Some(1)
+    );
 }

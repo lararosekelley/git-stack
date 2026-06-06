@@ -129,6 +129,10 @@ commands.
 for one run. If a rebase conflicts, `git-stk` records state in `.git/stack-state`; resolve conflicts and run
 `git stk continue`, or run `git stk abort`.
 
+`git-stk` records each branch's fork point in `.gitconfig` as `branch.<name>.stackBase` and rebases with
+`--onto`, so only a branch's own commits are replayed. This makes restacking safe after a parent is
+squash-merged, rebase-merged, or amended. A missing or stale fork point falls back to a plain rebase.
+
 ## Generated Assets
 
 Shell completions and a `man` page can be generated with:
