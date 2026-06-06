@@ -15,8 +15,8 @@
       (`setup --refresh`) after each upgrade
 - [x] Completions don't include flags: was a clap_complete static-script bug with dashed binary names
       (dispatch built `git__stk__subcmd__submit` but case labels said `git__subcmd__stk__subcmd__submit`).
-      Resolved by switching to clap_complete's dynamic completion (`CompleteEnv` + `COMPLETE=bash git-stk`)
-      - the static script generator is no longer used, so the bug is moot. Flags now complete; regression
+      Resolved by switching to clap_complete's dynamic completion (`CompleteEnv` + `COMPLETE=bash git-stk`) - the
+      static script generator is no longer used, so the bug is moot. Flags now complete; regression
       test asserts `submit --<TAB>` yields `--dry-run --stack`
 - [x] `git stk bump` next-step instructions don't work as printed: `git tag vX.Y.Z` creates a LIGHTWEIGHT
       tag, and `git push --follow-tags` only pushes ANNOTATED tags (confirmed: `git cat-file -t v0.3.0` ->
@@ -35,6 +35,9 @@
 
 ## More helpful PR management tools
 
+- [ ] Refresh stack overview notes during the merge cycle: `cleanup` should update the marker section in the remaining
+      PRs' descriptions (drop merged entries, re-point the base), since mid-merge the overview still lists
+      already-merged PRs until the next `submit --stack`
 - [x] Graphite is really nice in how it comments on PRs directly to show the stack and where this PR sits in it.
       Done via the PR description: `submit --stack` maintains a marker-delimited section at the end of every
       body with the full stack as linked bullets (title + number), leaf-first, a pointing emoji on the PR
