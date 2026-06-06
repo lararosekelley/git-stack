@@ -82,16 +82,14 @@
       is excluded only when it is the trunk; an unanchored root still fails validation with the adopt/sync
       hint. WIP-upstack scoping (`--downstack`) remains future work. (Bit us three times before landing:
       the v0.4.0 merge ceremony, the one-switch loop, and a one-branch submit from the leaf)
-- [ ] One-shot merge-loop advance command - the foolproof "I just merged a PR, get me to the next one":
-      check remote state, fetch trunk (`git fetch origin main:main`, no checkout needed), cleanup merged
-      branches (delete + retarget), restack + push the remainder, move me to the new bottom branch, and
-      print the next PR/MR link at the bottom of the remaining stack. Naming: Graphite's equivalent is
-      `gt sync` (fetch trunk + delete merged + restack, though it does NOT check out anything) - our
-      existing `sync` (metadata from review bases) is close in spirit and could absorb this as the
-      Graphite-style one-shot, with metadata refresh as one of its steps. Alternatively `git stk next` if
-      the auto-checkout feels too surprising for `sync`. Open DX questions: should it move HEAD by default
-      or behind a flag/config (`stk.syncCheckout`)? Should it refresh stack overview notes too (see the
-      cleanup note item above - same machinery, natural home)
+- [x] One-shot merge-loop advance command - done by absorbing it into `sync` (Graphite precedent:
+      `gt sync`), avoiding a new verb that would conflate with `continue`/`up`. `git stk sync` now: fetches
+      the trunk (checkout-aware, `fetch main:main` when elsewhere / `pull --ff-only` on trunk), refreshes
+      metadata from open reviews (the old sync), cleans up provider-verified merged branches, moves you off
+      any branch being deleted (onto the new bottom - "the next one up"), restacks + pushes per
+      `stk.pushOnRestack`, and prints `next up: <branch> -> #N <url>` or `stack complete`. Scope changed
+      from all-local-branches to the current stack. NOT yet included: refreshing stack overview notes
+      during the loop (see the cleanup-notes item above - still open)
 - [ ] `git stk guide` command to provide an example to try the tool out?
 - [ ] More color in CLI all over the place to make it feel more professional
 

@@ -59,7 +59,7 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool, delete_branch: bool) -> Resu
     Ok(())
 }
 
-fn cleanup_merged_branch(
+pub(crate) fn cleanup_merged_branch(
     review_provider: &dyn ReviewProvider,
     branch: &str,
     dry_run: bool,
@@ -113,7 +113,7 @@ fn cleanup_merged_branch(
     Ok(())
 }
 
-fn cleanup_branch_deletion(
+pub(crate) fn cleanup_branch_deletion(
     branch: &str,
     current_branch: &str,
     dry_run: bool,
