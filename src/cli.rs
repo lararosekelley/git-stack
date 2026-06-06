@@ -28,6 +28,7 @@ pub enum Command {
     Provider(commands::provider::Provider),
     Review(commands::review::Review),
     Sync(commands::sync::Sync),
+    Merge(commands::merge::Merge),
     Repair(commands::repair::Repair),
     Submit(commands::submit::Submit),
     Config(commands::config::Config),

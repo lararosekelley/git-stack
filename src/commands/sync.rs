@@ -29,7 +29,7 @@ impl Run for Sync {
     }
 }
 
-fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
+pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
     let current = git::current_branch()?;
     let local_branches = git::local_branches()?;
     let trunk = stack::trunk_branch(&local_branches);

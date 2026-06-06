@@ -488,3 +488,42 @@ fn restack_covers_whole_stack_from_the_leaf() {
         repo.git(["rev-parse", "main"])
     );
 }
+
+#[test]
+fn restack_skips_branches_already_on_their_parent() {
+    let repo = TestRepo::new();
+    // The combination that caused needless rewrites: update-refs forces a
+    // full replay unless we skip aligned branches ourselves.
+    repo.git(["config", "stk.updateRefs", "true"]);
+    if !repo.supports_update_refs() {
+        return;
+    }
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+
+    repo.git(["switch", "main"]);
+    repo.commit_file("main.txt", "m\n", "main moves");
+    repo.git(["switch", "feature/b"]);
+
+    // First restack does real work.
+    repo.stack().arg("restack").assert().success();
+    let a_sha = repo.git(["rev-parse", "feature/a"]);
+    let b_sha = repo.git(["rev-parse", "feature/b"]);
+
+    // Second restack must change nothing - same hashes, no replays.
+    repo.stack()
+        .arg("restack")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "feature/a already up to date with main",
+        ))
+        .stdout(predicates::str::contains(
+            "feature/b already up to date with feature/a",
+        ));
+    assert_eq!(repo.git(["rev-parse", "feature/a"]), a_sha);
+    assert_eq!(repo.git(["rev-parse", "feature/b"]), b_sha);
+}

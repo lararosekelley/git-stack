@@ -86,6 +86,9 @@ pub trait ReviewProvider {
     fn review_body(&self, review: &ReviewRequest) -> Result<String>;
 
     fn update_review_body(&self, review: &ReviewRequest, body: &str) -> Result<String>;
+
+    /// Merge the review with the given strategy: squash, rebase, or merge.
+    fn merge_review(&self, review: &ReviewRequest, strategy: &str) -> Result<String>;
 }
 
 pub fn detect_provider() -> Result<DetectedProvider> {
