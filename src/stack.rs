@@ -74,7 +74,7 @@ pub fn checkout_child(branch: Option<&str>) -> Result<()> {
             for child in children {
                 eprintln!("  {child}");
             }
-            bail!("choose one with `git stk down <branch>`");
+            bail!("choose one with `git stk up <branch>`");
         }
     };
 
@@ -86,8 +86,42 @@ pub fn print_stack() -> Result<()> {
     let parents = parent_map()?;
     let root = root_for(&current, &parents);
     let children = children_map(&parents);
-    print_tree(&root, &current, &children, 0, &mut BTreeSet::new());
+    let trunk = trunk_branch(&git::local_branches()?);
+
+    let mut lines = Vec::new();
+    collect_tree_lines(
+        &root,
+        &current,
+        trunk.as_deref(),
+        &children,
+        0,
+        &mut BTreeSet::new(),
+        &mut lines,
+    );
+
+    // Leaf-first, trunk last: the stack reads like a pile sitting on its
+    // base, matching the up/down direction of navigation.
+    for line in lines.iter().rev() {
+        println!("{line}");
+    }
     Ok(())
+}
+
+/// The trunk branch: the remote's default branch when known locally,
+/// otherwise a conventional name that exists.
+pub fn trunk_branch(branches: &[String]) -> Option<String> {
+    let remote = git::config_get(REMOTE_KEY)
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| DEFAULT_REMOTE.to_owned());
+    if let Some(default) = git::remote_default_branch(&remote) {
+        return Some(default);
+    }
+
+    ["main", "master"]
+        .iter()
+        .find(|name| branches.iter().any(|branch| branch == *name))
+        .map(|name| (*name).to_owned())
 }
 
 pub fn adopt_branch(branch: &str, parent: &str) -> Result<()> {
@@ -388,24 +422,33 @@ fn root_for(branch: &str, parents: &BTreeMap<String, String>) -> String {
     root
 }
 
-fn print_tree(
+#[allow(clippy::too_many_arguments)]
+fn collect_tree_lines(
     branch: &str,
     current: &str,
+    trunk: Option<&str>,
     children: &BTreeMap<String, Vec<String>>,
     depth: usize,
     seen: &mut BTreeSet<String>,
+    lines: &mut Vec<String>,
 ) {
-    let marker = if branch == current { " *" } else { "" };
-    println!("{}{}{}", "  ".repeat(depth), branch, marker);
+    let mut line = format!("{}{}", "  ".repeat(depth), branch);
+    if Some(branch) == trunk {
+        line.push_str(" (trunk)");
+    }
+    if branch == current {
+        line.push_str(" *");
+    }
+    lines.push(line);
 
     if !seen.insert(branch.to_owned()) {
-        println!("{}<cycle detected>", "  ".repeat(depth + 1));
+        lines.push(format!("{}<cycle detected>", "  ".repeat(depth + 1)));
         return;
     }
 
     if let Some(branch_children) = children.get(branch) {
         for child in branch_children {
-            print_tree(child, current, children, depth + 1, seen);
+            collect_tree_lines(child, current, trunk, children, depth + 1, seen, lines);
         }
     }
 }

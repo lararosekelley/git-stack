@@ -84,7 +84,7 @@ pub fn branch_candidates(current: &OsStr) -> Vec<CompletionCandidate> {
         .collect()
 }
 
-/// Complete `down` with the current branch's stack children only.
+/// Complete `up` with the current branch's stack children only.
 pub fn child_branch_candidates(current: &OsStr) -> Vec<CompletionCandidate> {
     let Some(prefix) = current.to_str() else {
         return Vec::new();

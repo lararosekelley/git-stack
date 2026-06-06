@@ -69,6 +69,12 @@
 - [x] Ancestry-inference fallback for parent discovery - folded into `repair` (see above); per-command
       fallback is unnecessary now that one command rebuilds everything
 - [ ] Handle branch renames (metadata under `branch.<old>.stackParent` goes stale)
+- [ ] `submit --stack` should work from anywhere in the stack, like Graphite: `gt submit` always includes
+      the downstack (a PR's base needs its own PR), and `--stack` adds the upstack - position never matters,
+      so there's no `git switch` ceremony. For us: walk `stkParent` to the root, then submit root +
+      descendants (the root walk exists in `print_stack`). The one reason NOT to submit everything: WIP
+      upstack branches you don't want PRs for yet - solve later with a `--downstack` scope (or
+      Graphite-style bare-`submit` defaulting to downstack), and/or draft PRs
 - [ ] `git stk guide` command to provide an example to try the tool out?
 
 ## More git automation

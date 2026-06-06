@@ -144,10 +144,10 @@ fn new_records_parent_and_supports_navigation() {
         .success()
         .stdout("feature/a\n");
 
-    repo.stack().arg("up").assert().success();
+    repo.stack().arg("down").assert().success();
     assert_eq!(repo.git(["branch", "--show-current"]), "main");
 
-    repo.stack().arg("down").assert().success();
+    repo.stack().arg("up").assert().success();
     assert_eq!(repo.git(["branch", "--show-current"]), "feature/a");
 }
 
@@ -176,7 +176,7 @@ fn adopt_list_and_detach_manage_existing_branches() {
         .arg("list")
         .assert()
         .success()
-        .stdout("main *\n  feature/a\n    feature/b\n");
+        .stdout("    feature/b\n  feature/a\nmain (trunk) *\n");
 
     repo.stack()
         .args(["detach", "feature/b"])
@@ -192,7 +192,7 @@ fn adopt_list_and_detach_manage_existing_branches() {
 }
 
 #[test]
-fn down_requires_branch_when_multiple_children_exist() {
+fn up_requires_branch_when_multiple_children_exist() {
     let repo = TestRepo::new();
 
     repo.git(["switch", "-c", "feature/a"]);
@@ -210,14 +210,14 @@ fn down_requires_branch_when_multiple_children_exist() {
         .success();
 
     repo.stack()
-        .arg("down")
+        .arg("up")
         .assert()
         .failure()
         .stderr(predicates::str::contains(
-            "choose one with `git stk down <branch>`",
+            "choose one with `git stk up <branch>`",
         ));
 
-    repo.stack().args(["down", "feature/b"]).assert().success();
+    repo.stack().args(["up", "feature/b"]).assert().success();
     assert_eq!(repo.git(["branch", "--show-current"]), "feature/b");
 }
 
@@ -2207,7 +2207,7 @@ fn completions_complete_flags_for_subcommands() {
 }
 
 #[test]
-fn completions_complete_only_children_for_down() {
+fn completions_complete_only_children_for_up() {
     let repo = TestRepo::new();
 
     repo.stack()
@@ -2220,14 +2220,14 @@ fn completions_complete_only_children_for_down() {
         .success();
     repo.git(["switch", "feature/alpha"]);
 
-    let completions = repo.complete_git_stk(&["down", ""]);
+    let completions = repo.complete_git_stk(&["up", ""]);
     assert!(
         completions.contains("feature/beta"),
         "expected child branch, got: {completions}"
     );
     assert!(
         !completions.contains("main"),
-        "down must not offer non-children, got: {completions}"
+        "up must not offer non-children, got: {completions}"
     );
 }
 
@@ -2606,4 +2606,23 @@ fn repair_reports_unrepairable_branches() {
         .stdout(predicates::str::contains(
             "0 repaired, 0 verified, 1 unresolved",
         ));
+}
+
+#[test]
+fn list_prints_leaf_first_without_trunk_label_for_fragments() {
+    let repo = TestRepo::new();
+
+    // A stack fragment not rooted at the trunk gets no (trunk) label.
+    repo.git(["switch", "-c", "feature/x"]);
+    repo.git(["switch", "-c", "feature/y"]);
+    repo.stack()
+        .args(["adopt", "feature/y", "--parent", "feature/x"])
+        .assert()
+        .success();
+
+    repo.stack()
+        .arg("list")
+        .assert()
+        .success()
+        .stdout("  feature/y *\nfeature/x\n");
 }
