@@ -1825,3 +1825,139 @@ fn detach_clears_stack_base() {
         Some(1)
     );
 }
+
+#[test]
+fn submit_stack_notes_dependency_in_child_review_body() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ view\ 13*)
+    printf '{"body":"Child PR description."}\n'
+    ;;
+  pr\ edit\ 13\ --body*)
+    printf '%s\n' "$*" > edit-body-args.txt
+    ;;
+  pr\ list*feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
+JSON
+    ;;
+  pr\ list*feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.git(["switch", "feature/a"]);
+    repo.stack()
+        .args(["submit", "--stack"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("noted 'Depends on #12' in #13"));
+
+    let recorded =
+        fs::read_to_string(repo.path().join("edit-body-args.txt")).expect("edit body args");
+    assert!(recorded.contains("Child PR description."));
+    assert!(recorded.contains("<!-- git-stk:stack -->"));
+    assert!(recorded.contains("Depends on #12"));
+}
+
+#[test]
+fn submit_stack_skips_note_when_already_present() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ view\ 13*)
+    printf '{"body":"Intro.\\n\\n<!-- git-stk:stack -->\\nDepends on #12\\n<!-- /git-stk:stack -->"}\n'
+    ;;
+  pr\ edit\ 13\ --body*)
+    echo "body should not be rewritten when the note is current" >&2
+    exit 1
+    ;;
+  pr\ list*feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
+JSON
+    ;;
+  pr\ list*feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.git(["switch", "feature/a"]);
+    repo.stack()
+        .args(["submit", "--stack"])
+        .env("PATH", path)
+        .assert()
+        .success();
+}
+
+#[test]
+fn submit_stack_notes_dependency_in_gitlab_description() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.provider", "gitlab"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    let path = repo.fake_cli(
+        "glab",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  mr\ view\ 35*)
+    printf '{"description":""}\n'
+    ;;
+  mr\ update\ 35\ --description*)
+    printf '%s\n' "$*" > update-description-args.txt
+    ;;
+  mr\ list*feature/a*)
+    cat <<'JSON'
+[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/a","web_url":"https://gitlab.com/owner/repo/-/merge_requests/34"}]
+JSON
+    ;;
+  mr\ list*feature/b*)
+    cat <<'JSON'
+[{"iid":35,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/owner/repo/-/merge_requests/35"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.git(["switch", "feature/a"]);
+    repo.stack()
+        .args(["submit", "--stack"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("noted 'Depends on !34' in !35"));
+
+    let recorded = fs::read_to_string(repo.path().join("update-description-args.txt"))
+        .expect("update description args");
+    assert!(recorded.contains("Depends on !34"));
+}

@@ -78,6 +78,10 @@ pub trait ReviewProvider {
     fn create_review(&self, branch: &str, base: &str) -> Result<String>;
 
     fn update_review_base(&self, review: &ReviewRequest, base: &str) -> Result<String>;
+
+    fn review_body(&self, review: &ReviewRequest) -> Result<String>;
+
+    fn update_review_body(&self, review: &ReviewRequest, body: &str) -> Result<String>;
 }
 
 struct GitHubProvider;
@@ -129,6 +133,15 @@ impl ReviewProvider for GitHubProvider {
     fn update_review_base(&self, review: &ReviewRequest, base: &str) -> Result<String> {
         command_output("gh", &["pr", "edit", review.id_value(), "--base", base])
     }
+
+    fn review_body(&self, review: &ReviewRequest) -> Result<String> {
+        let output = command_output("gh", &["pr", "view", review.id_value(), "--json", "body"])?;
+        parse_body_field(&output, "body")
+    }
+
+    fn update_review_body(&self, review: &ReviewRequest, body: &str) -> Result<String> {
+        command_output("gh", &["pr", "edit", review.id_value(), "--body", body])
+    }
 }
 
 impl ReviewProvider for GitLabProvider {
@@ -179,6 +192,31 @@ impl ReviewProvider for GitLabProvider {
             &["mr", "update", review.id_value(), "--target-branch", base],
         )
     }
+
+    fn review_body(&self, review: &ReviewRequest) -> Result<String> {
+        let output = command_output(
+            "glab",
+            &["mr", "view", review.id_value(), "--output", "json"],
+        )?;
+        parse_body_field(&output, "description")
+    }
+
+    fn update_review_body(&self, review: &ReviewRequest, body: &str) -> Result<String> {
+        command_output(
+            "glab",
+            &["mr", "update", review.id_value(), "--description", body],
+        )
+    }
+}
+
+fn parse_body_field(output: &str, field: &str) -> Result<String> {
+    let value: serde_json::Value =
+        serde_json::from_str(output).context("failed to parse provider JSON")?;
+    Ok(value
+        .get(field)
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_owned())
 }
 
 pub fn print_provider() -> Result<()> {
@@ -326,6 +364,10 @@ pub fn submit(branch: Option<&str>, submit_stack: bool, dry_run: bool) -> Result
             &parent,
             dry_run,
         )?);
+
+        if submit_stack {
+            ensure_stack_note(review_provider.as_ref(), &branch, &parent, dry_run)?;
+        }
     }
 
     println!(
@@ -333,6 +375,66 @@ pub fn submit(branch: Option<&str>, submit_stack: bool, dry_run: bool) -> Result
         summary.created, summary.updated, summary.skipped
     );
     Ok(())
+}
+
+const STACK_NOTE_START: &str = "<!-- git-stk:stack -->";
+const STACK_NOTE_END: &str = "<!-- /git-stk:stack -->";
+
+/// Maintain a "Depends on" line in the review body so reviewers can see the
+/// stack relationship. The line lives between marker comments, so resubmits
+/// update it in place instead of appending duplicates.
+fn ensure_stack_note(
+    review_provider: &dyn ReviewProvider,
+    branch: &str,
+    parent: &str,
+    dry_run: bool,
+) -> Result<()> {
+    // The bottom of a stack targets a branch without a review (e.g. main);
+    // nothing to link in that case.
+    let Some(parent_review) = review_provider.review_for_branch(parent)? else {
+        return Ok(());
+    };
+    let Some(review) = review_provider.review_for_branch(branch)? else {
+        return Ok(());
+    };
+
+    let note = format!("Depends on {}", parent_review.id);
+
+    if dry_run {
+        println!("would note '{note}' in {}", review.id);
+        return Ok(());
+    }
+
+    let body = review_provider.review_body(&review)?;
+    let updated = body_with_stack_note(&body, &note);
+    if updated == body {
+        return Ok(());
+    }
+
+    review_provider.update_review_body(&review, &updated)?;
+    println!("noted '{note}' in {}", review.id);
+    Ok(())
+}
+
+/// Insert or replace the marker-delimited stack note in a review body.
+fn body_with_stack_note(body: &str, note: &str) -> String {
+    let section = format!("{STACK_NOTE_START}\n{note}\n{STACK_NOTE_END}");
+
+    if let (Some(start), Some(end)) = (body.find(STACK_NOTE_START), body.find(STACK_NOTE_END))
+        && start < end
+    {
+        let mut updated = String::new();
+        updated.push_str(&body[..start]);
+        updated.push_str(&section);
+        updated.push_str(&body[end + STACK_NOTE_END.len()..]);
+        return updated;
+    }
+
+    if body.trim().is_empty() {
+        section
+    } else {
+        format!("{}\n\n{section}", body.trim_end())
+    }
 }
 
 pub fn cleanup(branch: Option<&str>, dry_run: bool, delete_branch: bool) -> Result<()> {
@@ -830,5 +932,53 @@ mod tests {
             review.state,
             ReviewState::Unknown("READY_FOR_REVIEW".to_owned())
         );
+    }
+
+    #[test]
+    fn body_with_stack_note_appends_to_existing_body() {
+        let updated = body_with_stack_note("Some PR description.\n", "Depends on #12");
+        assert_eq!(
+            updated,
+            "Some PR description.\n\n<!-- git-stk:stack -->\nDepends on #12\n<!-- /git-stk:stack -->"
+        );
+    }
+
+    #[test]
+    fn body_with_stack_note_fills_empty_body() {
+        let updated = body_with_stack_note("", "Depends on !34");
+        assert_eq!(
+            updated,
+            "<!-- git-stk:stack -->\nDepends on !34\n<!-- /git-stk:stack -->"
+        );
+    }
+
+    #[test]
+    fn body_with_stack_note_replaces_existing_note() {
+        let body =
+            "Intro.\n\n<!-- git-stk:stack -->\nDepends on #12\n<!-- /git-stk:stack -->\n\nOutro.";
+        let updated = body_with_stack_note(body, "Depends on #99");
+        assert_eq!(
+            updated,
+            "Intro.\n\n<!-- git-stk:stack -->\nDepends on #99\n<!-- /git-stk:stack -->\n\nOutro."
+        );
+    }
+
+    #[test]
+    fn body_with_stack_note_is_idempotent() {
+        let body = body_with_stack_note("Description.", "Depends on #12");
+        assert_eq!(body_with_stack_note(&body, "Depends on #12"), body);
+    }
+
+    #[test]
+    fn parse_body_field_reads_field_and_defaults_empty() {
+        assert_eq!(
+            parse_body_field(r#"{"body":"hello"}"#, "body").expect("parse body"),
+            "hello"
+        );
+        assert_eq!(
+            parse_body_field(r#"{"description":null}"#, "description").expect("parse body"),
+            ""
+        );
+        assert_eq!(parse_body_field(r#"{}"#, "body").expect("parse body"), "");
     }
 }

@@ -6,20 +6,31 @@
 
 ## Bugs
 
-- [ ] Completions not working after running `source <(git stk completions bash)` in shell - needs diagnosis
-      (shim function vs git's completion loading order? does `git-stk <TAB>` work while `git stk <TAB>` doesn't?
-      is bash-completion / git's completion script loaded before ours?)
-- [ ] `git stk -h` works but `git stk --help` shows "No manual entry for git-stk" - git intercepts
-      `<cmd> --help` and runs `man git-<cmd>`, and our man page is generated but never installed anywhere.
-      Fix ideas: ship `git-stk.1` in release archives + install/print-path step, and/or a
-      `git stk manpage` command mirroring the completions approach
+- [x] Completions not working after running `source <(git stk completions bash)` in shell - the `_git_stk`
+      shim called the clap completer without the positional args `complete -F` normally passes, so its command
+      dispatch never matched. Fixed; the shim now passes command/cur/prev
+- [x] `git stk -h` works but `git stk --help` shows "No manual entry for git-stk" - git intercepts
+      `<cmd> --help` and runs `man git-<cmd>`. Fixed via `git stk setup`, which installs the man page to
+      `~/.local/share/man/man1` and wires shell completions; `upgrade` re-renders assets via the new binary
+      (`setup --refresh`) after each upgrade
+- [ ] Completions don't include flags: `git stk submit --<TAB>` completes nothing. DIAGNOSED - it is a
+      clap_complete bug with dashed binary names, not our shim (a bash harness shows the direct
+      `git-stk submit --<TAB>` form fails too). The generated script is internally inconsistent: the
+      dispatch loop builds `cmd="git__stk__subcmd__submit"` but the option `case` labels are generated as
+      `git__subcmd__stk__subcmd__submit` (the `-` in `git-stk` expands differently in the two generators),
+      so no subcommand-depth case ever matches and `opts` stays empty. Top-level subcommand completion only
+      works because the shallow `git__stk` label is consistent. Fix options, in order: (1) bump
+      clap_complete and check changelog for a dashed-name fix, (2) post-process the script in
+      `completions::print` (rewrite `git__subcmd__stk` -> `git__stk`) with a harness test asserting
+      `submit --<TAB>` yields `--dry-run --stack`, (3) report upstream either way - this affects every
+      `git-*` subcommand binary
 
 ## Handle more cases / types of merges
 
-- [ ] Squash-merge detection is important for repos without merge commits - crucial for solid `cleanup` command.
-      Children carry commits that are upstream by patch but not by SHA; needs patch-id/`git cherry` detection
-      when retargeting/rebasing after a parent lands. (GitHub is now squash/rebase-only for this repo, so we
-      will hit this ourselves.)
+- [x] Squash-merge detection - solved by tracking fork points instead of detecting squashes: each branch
+      records `branch.<name>.stackBase`, restack rebases with `--onto` so only a branch's own commits replay,
+      and cleanup records the child's fork point off the merged parent before retargeting. Also makes amended
+      or rebase-merged parents restack cleanly
 - [ ] Parent PR closed without merging: decide what `cleanup`/`status` should say (currently the merged-only
       fallback lookup means closed-unmerged reviews report as "no review found")
 - [ ] Parent branch deleted remotely after merge: use PR metadata to discover the old base when retargeting
@@ -29,7 +40,13 @@
 - [ ] Graphite is really nice in how it comments on PRs directly to show the stack and where this PR sits in it -
       we should do that with either a comment that we can edit when stack is re-submitted/otherwise updated, or
       managing the end of the PR description
-- [ ] Simpler version first: "Depends on #123" style links in PR bodies on `submit --stack`
+- [x] Simpler version first: "Depends on #123" style links in PR bodies on `submit --stack` - maintained in a
+      marker-delimited section (`<!-- git-stk:stack -->`) so resubmits update in place; the full Graphite-style
+      stack visualization above can reuse those markers later
+- [ ] `git stk list --markdown`: print the stack in a copy-paste format for sharing with reviewers in
+      Slack/etc. Brief summary at top (e.g. "5 PRs, base main, 3 open / 2 merged"), then an ordered
+      bottom-to-top list of PRs/MRs with title, link, and state per entry. Needs provider review lookups,
+      so it should degrade gracefully (plain branch names) when no reviews exist or `gh`/`glab` is missing
 
 ## Stack ergonomics
 
