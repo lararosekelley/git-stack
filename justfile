@@ -17,6 +17,18 @@ build:
 clean:
     cargo clean
 
+# Check Cargo package contents
+package:
+    cargo package --no-verify
+
+# Run publish dry-run checks
+publish-dry-run:
+    cargo publish --dry-run
+
+# Plan release artifacts
+dist-plan:
+    dist plan
+
 # Generate shell completions and man pages
 generate-assets:
     cargo run --features generate --bin git-stack-generate -- all target/generated
