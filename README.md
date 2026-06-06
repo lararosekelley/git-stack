@@ -28,6 +28,21 @@ Upgrade an installer-managed copy with:
 git stk upgrade
 ```
 
+## Shell Completions
+
+The installed binary prints its own completions, so they stay in sync across upgrades:
+
+```sh
+# bash: add to ~/.bashrc
+source <(git stk completions bash)
+
+# zsh: write to a directory on your fpath
+git stk completions zsh > "${fpath[1]}/_git-stk"
+```
+
+Elvish, fish, and PowerShell are also supported. The bash output includes a `_git_stk` wrapper so git's own
+completion can complete `git stk <TAB>` in addition to `git-stk <TAB>`.
+
 ## Install For Development
 
 ```sh

@@ -1390,3 +1390,38 @@ fn upgrade_without_receipt_suggests_cargo_install() {
         .failure()
         .stderr(predicates::str::contains("cargo install git-stk --locked"));
 }
+
+#[test]
+fn completions_bash_includes_git_subcommand_shim() {
+    let repo = TestRepo::new();
+
+    repo.stack()
+        .args(["completions", "bash"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "complete -F _git-stk -o nosort -o bashdefault -o default git-stk",
+        ))
+        .stdout(predicates::str::contains("_git_stk() {"));
+}
+
+#[test]
+fn completions_zsh_emits_compdef_for_git_stk() {
+    let repo = TestRepo::new();
+
+    repo.stack()
+        .args(["completions", "zsh"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("#compdef git-stk"));
+}
+
+#[test]
+fn completions_rejects_unknown_shell() {
+    let repo = TestRepo::new();
+
+    repo.stack()
+        .args(["completions", "tcsh"])
+        .assert()
+        .failure();
+}
