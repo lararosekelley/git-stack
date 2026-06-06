@@ -1,0 +1,21 @@
+use anyhow::Result;
+use clap::ArgAction;
+
+use crate::commands::Run;
+
+/// Install the man page and wire up shell completions.
+#[derive(Debug, clap::Args)]
+pub struct Setup {
+    /// Skip confirmation prompts.
+    #[arg(long, short = 'y', action = ArgAction::SetTrue)]
+    yes: bool,
+    /// Only re-render generated assets (man page); never touch shell rc files.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with = "yes")]
+    refresh: bool,
+}
+
+impl Run for Setup {
+    fn run(self) -> Result<()> {
+        crate::setup::setup(self.yes, self.refresh)
+    }
+}

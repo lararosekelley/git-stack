@@ -1,8 +1,8 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
-use git_stk::{cli, completions, config, providers, setup, stack, upgrade};
-
 use git_stk::cli::{Cli, Command};
+use git_stk::commands::Run;
+use git_stk::completions;
 
 fn main() -> Result<()> {
     // Dynamic shell completion: when invoked by a shell's completer with
@@ -11,59 +11,28 @@ fn main() -> Result<()> {
         .var(completions::COMPLETE_VAR)
         .complete();
 
-    let cli = Cli::parse();
-
-    match cli.command {
-        Command::New { branch } => stack::create_branch(&branch),
-        Command::Parent { branch } => stack::print_parent(branch.as_deref()),
-        Command::Children { branch } => stack::print_children(branch.as_deref()),
-        Command::Up { branch } => stack::checkout_child(branch.as_deref()),
-        Command::Down => stack::checkout_parent(),
-        Command::List { markdown } => {
-            if markdown {
-                providers::list_markdown()
-            } else {
-                stack::print_stack()
-            }
-        }
-        Command::Status { branch } => providers::print_status(branch.as_deref()),
-        Command::Adopt { branch, parent } => stack::adopt_branch(&branch, &parent),
-        Command::Detach { branch } => stack::detach_branch(branch.as_deref()),
-        Command::Restack {
-            update_refs,
-            no_update_refs,
-            push,
-            no_push,
-        } => stack::restack(
-            cli::UpdateRefsMode::from_flags(update_refs, no_update_refs),
-            cli::PushMode::from_flags(push, no_push),
-        ),
-        Command::Continue => stack::continue_restack(),
-        Command::Abort => stack::abort_restack(),
-        Command::Provider => providers::print_provider(),
-        Command::Review { branch } => providers::print_review(branch.as_deref()),
-        Command::Sync { branch, dry_run } => providers::sync_stack(branch.as_deref(), dry_run),
-        Command::Repair { dry_run } => providers::repair(dry_run),
-        Command::Submit {
-            branch,
-            dry_run,
-            stack,
-            push,
-            no_push,
-        } => providers::submit(
-            branch.as_deref(),
-            stack,
-            dry_run,
-            cli::PushMode::from_flags(push, no_push),
-        ),
-        Command::Config => config::print_config(),
-        Command::Completions { shell } => completions::print(shell),
-        Command::Setup { yes, refresh } => setup::setup(yes, refresh),
-        Command::Upgrade { head, force, yes } => upgrade::upgrade(head, force, yes),
-        Command::Cleanup {
-            branch,
-            dry_run,
-            delete_branch,
-        } => providers::cleanup(branch.as_deref(), dry_run, delete_branch),
+    match Cli::parse().command {
+        Command::New(command) => command.run(),
+        Command::Parent(command) => command.run(),
+        Command::Children(command) => command.run(),
+        Command::Up(command) => command.run(),
+        Command::Down(command) => command.run(),
+        Command::List(command) => command.run(),
+        Command::Status(command) => command.run(),
+        Command::Adopt(command) => command.run(),
+        Command::Detach(command) => command.run(),
+        Command::Restack(command) => command.run(),
+        Command::Continue(command) => command.run(),
+        Command::Abort(command) => command.run(),
+        Command::Provider(command) => command.run(),
+        Command::Review(command) => command.run(),
+        Command::Sync(command) => command.run(),
+        Command::Repair(command) => command.run(),
+        Command::Submit(command) => command.run(),
+        Command::Config(command) => command.run(),
+        Command::Completions(command) => command.run(),
+        Command::Setup(command) => command.run(),
+        Command::Upgrade(command) => command.run(),
+        Command::Cleanup(command) => command.run(),
     }
 }

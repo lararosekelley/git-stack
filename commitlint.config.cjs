@@ -7,6 +7,7 @@ module.exports = {
       "always",
       [
         "cli",
+        "code",
         "stack",
         "restack",
         "providers",
