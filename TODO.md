@@ -6,20 +6,24 @@
 
 ## Bugs
 
-- [ ] Completions not working after running `source <(git stk completions bash)` in shell - needs diagnosis
-      (shim function vs git's completion loading order? does `git-stk <TAB>` work while `git stk <TAB>` doesn't?
-      is bash-completion / git's completion script loaded before ours?)
-- [ ] `git stk -h` works but `git stk --help` shows "No manual entry for git-stk" - git intercepts
-      `<cmd> --help` and runs `man git-<cmd>`, and our man page is generated but never installed anywhere.
-      Fix ideas: ship `git-stk.1` in release archives + install/print-path step, and/or a
-      `git stk manpage` command mirroring the completions approach
+- [x] Completions not working after running `source <(git stk completions bash)` in shell - the `_git_stk`
+      shim called the clap completer without the positional args `complete -F` normally passes, so its command
+      dispatch never matched. Fixed; the shim now passes command/cur/prev
+- [x] `git stk -h` works but `git stk --help` shows "No manual entry for git-stk" - git intercepts
+      `<cmd> --help` and runs `man git-<cmd>`. Fixed via `git stk setup`, which installs the man page to
+      `~/.local/share/man/man1` and wires shell completions; `upgrade` re-renders assets via the new binary
+      (`setup --refresh`) after each upgrade
+- [ ] Completions don't include flags: `git stk submit --<TAB>` completes nothing. Diagnosis questions:
+      does `git-stk submit --<TAB>` (binary form, no git dispatch) complete flags? If yes, the `_git_stk`
+      shim or git's completion is eating `--`-prefixed words (git's bash completion may special-case `--*`
+      before delegating to `_git_stk`); if no, the clap-generated completer itself is the problem
 
 ## Handle more cases / types of merges
 
-- [ ] Squash-merge detection is important for repos without merge commits - crucial for solid `cleanup` command.
-      Children carry commits that are upstream by patch but not by SHA; needs patch-id/`git cherry` detection
-      when retargeting/rebasing after a parent lands. (GitHub is now squash/rebase-only for this repo, so we
-      will hit this ourselves.)
+- [x] Squash-merge detection - solved by tracking fork points instead of detecting squashes: each branch
+      records `branch.<name>.stackBase`, restack rebases with `--onto` so only a branch's own commits replay,
+      and cleanup records the child's fork point off the merged parent before retargeting. Also makes amended
+      or rebase-merged parents restack cleanly
 - [ ] Parent PR closed without merging: decide what `cleanup`/`status` should say (currently the merged-only
       fallback lookup means closed-unmerged reviews report as "no review found")
 - [ ] Parent branch deleted remotely after merge: use PR metadata to discover the old base when retargeting
@@ -29,7 +33,13 @@
 - [ ] Graphite is really nice in how it comments on PRs directly to show the stack and where this PR sits in it -
       we should do that with either a comment that we can edit when stack is re-submitted/otherwise updated, or
       managing the end of the PR description
-- [ ] Simpler version first: "Depends on #123" style links in PR bodies on `submit --stack`
+- [x] Simpler version first: "Depends on #123" style links in PR bodies on `submit --stack` - maintained in a
+      marker-delimited section (`<!-- git-stk:stack -->`) so resubmits update in place; the full Graphite-style
+      stack visualization above can reuse those markers later
+- [ ] `git stk list --markdown`: print the stack in a copy-paste format for sharing with reviewers in
+      Slack/etc. Brief summary at top (e.g. "5 PRs, base main, 3 open / 2 merged"), then an ordered
+      bottom-to-top list of PRs/MRs with title, link, and state per entry. Needs provider review lookups,
+      so it should degrade gracefully (plain branch names) when no reviews exist or `gh`/`glab` is missing
 
 ## Stack ergonomics
 
