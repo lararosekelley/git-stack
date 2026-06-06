@@ -13,10 +13,17 @@
       `<cmd> --help` and runs `man git-<cmd>`. Fixed via `git stk setup`, which installs the man page to
       `~/.local/share/man/man1` and wires shell completions; `upgrade` re-renders assets via the new binary
       (`setup --refresh`) after each upgrade
-- [ ] Completions don't include flags: `git stk submit --<TAB>` completes nothing. Diagnosis questions:
-      does `git-stk submit --<TAB>` (binary form, no git dispatch) complete flags? If yes, the `_git_stk`
-      shim or git's completion is eating `--`-prefixed words (git's bash completion may special-case `--*`
-      before delegating to `_git_stk`); if no, the clap-generated completer itself is the problem
+- [ ] Completions don't include flags: `git stk submit --<TAB>` completes nothing. DIAGNOSED - it is a
+      clap_complete bug with dashed binary names, not our shim (a bash harness shows the direct
+      `git-stk submit --<TAB>` form fails too). The generated script is internally inconsistent: the
+      dispatch loop builds `cmd="git__stk__subcmd__submit"` but the option `case` labels are generated as
+      `git__subcmd__stk__subcmd__submit` (the `-` in `git-stk` expands differently in the two generators),
+      so no subcommand-depth case ever matches and `opts` stays empty. Top-level subcommand completion only
+      works because the shallow `git__stk` label is consistent. Fix options, in order: (1) bump
+      clap_complete and check changelog for a dashed-name fix, (2) post-process the script in
+      `completions::print` (rewrite `git__subcmd__stk` -> `git__stk`) with a harness test asserting
+      `submit --<TAB>` yields `--dry-run --stack`, (3) report upstream either way - this affects every
+      `git-*` subcommand binary
 
 ## Handle more cases / types of merges
 
