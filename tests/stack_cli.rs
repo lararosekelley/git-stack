@@ -2237,3 +2237,137 @@ fn completions_complete_branch_names_with_prefix() {
         "prefix must filter branches, got: {completions}"
     );
 }
+
+#[test]
+fn submit_stack_push_pushes_branches_before_provider_calls() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "parent change");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "child change");
+
+    // Bare origin with no branches: submit --push must create them remotely.
+    let bare = repo.add_bare_origin(&[]);
+    let gh_path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ create*)
+    printf 'created review\n'
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.git(["switch", "feature/a"]);
+    let assert = repo
+        .stack()
+        .args(["submit", "--stack", "--push"])
+        .env("PATH", gh_path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "pushed feature/a feature/b to origin",
+        ));
+
+    // Remote branches exist and match local.
+    assert_eq!(
+        repo.remote_sha(&bare, "feature/a"),
+        repo.git(["rev-parse", "feature/a"])
+    );
+    assert_eq!(
+        repo.remote_sha(&bare, "feature/b"),
+        repo.git(["rev-parse", "feature/b"])
+    );
+
+    // Push output precedes review creation output.
+    let stdout = String::from_utf8_lossy(&assert.get_output().stdout).into_owned();
+    let push_at = stdout.find("pushed feature/a").expect("push line");
+    let create_at = stdout.find("created feature/a").expect("create line");
+    assert!(
+        push_at < create_at,
+        "push must happen before submit:\n{stdout}"
+    );
+
+    // Upstream tracking was set.
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/a.remote"]),
+        "origin"
+    );
+}
+
+#[test]
+fn submit_push_respects_config_and_no_push_overrides_it() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stack.pushOnSubmit", "true"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "parent change");
+
+    let bare = repo.add_bare_origin(&[]);
+    let gh_path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ create*) printf 'created review\n' ;;
+  *) printf '[]\n' ;;
+esac
+"##,
+    );
+
+    // Config enables the push.
+    repo.stack()
+        .args(["submit"])
+        .env("PATH", gh_path.clone())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("pushed feature/a to origin"));
+    assert_eq!(
+        repo.remote_sha(&bare, "feature/a"),
+        repo.git(["rev-parse", "feature/a"])
+    );
+
+    // --no-push overrides the config.
+    repo.commit_file("a2.txt", "a2\n", "more work");
+    let stale = repo.remote_sha(&bare, "feature/a");
+    repo.stack()
+        .args(["submit", "--no-push"])
+        .env("PATH", gh_path)
+        .assert()
+        .success();
+    assert_eq!(repo.remote_sha(&bare, "feature/a"), stale);
+}
+
+#[test]
+fn submit_push_dry_run_does_not_push() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stack.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "parent change");
+
+    let bare = repo.add_bare_origin(&[]);
+    let gh_path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+printf '[]\n'
+"##,
+    );
+
+    repo.stack()
+        .args(["submit", "--push", "--dry-run"])
+        .env("PATH", gh_path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("would push feature/a to origin"));
+
+    let remote = Command::new("git")
+        .args(["rev-parse", "feature/a"])
+        .current_dir(bare.path())
+        .output()
+        .expect("check remote");
+    assert!(!remote.status.success(), "dry run must not push");
+}

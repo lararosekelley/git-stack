@@ -55,6 +55,15 @@ pub fn push_force_with_lease(remote: &str, branches: &[String]) -> Result<()> {
     status(&args).with_context(|| format!("failed to push branches to {remote}"))
 }
 
+/// Push branches and set upstream tracking; used before submitting so new
+/// branches exist remotely and rebased ones are safely updated.
+pub fn push_set_upstream_force_with_lease(remote: &str, branches: &[String]) -> Result<()> {
+    let mut args = vec!["push", "--set-upstream", "--force-with-lease", remote];
+    args.extend(branches.iter().map(String::as_str));
+
+    status(&args).with_context(|| format!("failed to push branches to {remote}"))
+}
+
 pub fn rebase(parent: &str, branch: &str, update_refs: bool) -> Result<()> {
     let mut args = vec!["rebase"];
     if update_refs {

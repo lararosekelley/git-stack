@@ -7,6 +7,7 @@ use crate::{git, stack};
 
 const PROVIDER_KEY: &str = "stack.provider";
 const REMOTE_KEY: &str = "stack.remote";
+const PUSH_ON_SUBMIT_KEY: &str = "stack.pushOnSubmit";
 const DEFAULT_REMOTE: &str = "origin";
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -340,7 +341,12 @@ pub fn sync_stack(branch: Option<&str>, dry_run: bool) -> Result<()> {
     Ok(())
 }
 
-pub fn submit(branch: Option<&str>, submit_stack: bool, dry_run: bool) -> Result<()> {
+pub fn submit(
+    branch: Option<&str>,
+    submit_stack: bool,
+    dry_run: bool,
+    push_mode: crate::cli::PushMode,
+) -> Result<()> {
     let branch = branch
         .map(str::to_owned)
         .map_or_else(git::current_branch, Ok)?;
@@ -352,6 +358,24 @@ pub fn submit(branch: Option<&str>, submit_stack: bool, dry_run: bool) -> Result
     };
 
     let branch_parents = branch_parents(&branches)?;
+
+    // Push after stack validation but before any provider calls: creating a
+    // review requires the branch to exist remotely, and -u --force-with-lease
+    // covers both first pushes and safely updating rebased branches.
+    let push = match push_mode {
+        crate::cli::PushMode::Config => git::config_get_bool(PUSH_ON_SUBMIT_KEY)?.unwrap_or(false),
+        crate::cli::PushMode::Enabled => true,
+        crate::cli::PushMode::Disabled => false,
+    };
+    if push {
+        let remote = git::config_get(REMOTE_KEY)?.unwrap_or_else(|| DEFAULT_REMOTE.to_owned());
+        if dry_run {
+            println!("would push {} to {remote}", branches.join(" "));
+        } else {
+            git::push_set_upstream_force_with_lease(&remote, &branches)?;
+            println!("pushed {} to {remote}", branches.join(" "));
+        }
+    }
 
     let provider = detect_provider()?;
     let review_provider = review_provider(provider.kind);
