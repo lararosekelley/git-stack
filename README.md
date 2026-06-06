@@ -180,7 +180,8 @@ Everything is optional; defaults shown below:
     remote = origin
     ; Pass --update-refs to git rebase during restack. Default: false.
     updateRefs = true
-    ; Force-push (with lease) every rebased branch after restack. Default: false.
+    ; Force-push (with lease) rebased branches after restack (also the restack
+    ; step inside sync and merge). Default: false.
     pushOnRestack = true
     ; Push branches (-u --force-with-lease) before submitting reviews. Default: false.
     pushOnSubmit = true
@@ -192,7 +193,7 @@ Everything is optional; defaults shown below:
 
 The tool also manages per-branch metadata: `branch.<name>.stkParent` (the stack parent) and
 `branch.<name>.stkBase` (the recorded fork point). These are written by `new`, `adopt`, `sync`, `restack`,
-and `cleanup`; you normally never touch them by hand.
+`cleanup`, and `repair`; you normally never touch them by hand.
 
 Branches are the real state; the metadata is just annotation. If it is ever lost or stale, `git stk repair`
 rebuilds it from review bases (when `gh`/`glab` is available) and branch ancestry, and verifies recorded
