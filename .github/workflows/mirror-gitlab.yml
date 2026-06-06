@@ -1,0 +1,43 @@
+name: Mirror GitLab
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-gitlab-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Push to GitLab mirror
+        env:
+          GITLAB_MIRROR_TOKEN: ${{ secrets.GITLAB_MIRROR_TOKEN }}
+        run: |
+          if [ -z "$GITLAB_MIRROR_TOKEN" ]; then
+            echo "GITLAB_MIRROR_TOKEN is not configured" >&2
+            exit 1
+          fi
+
+          git remote add gitlab "https://oauth2:${GITLAB_MIRROR_TOKEN}@gitlab.com/lararosekelley/git-stack-mirror.git"
+
+          if [ "$GITHUB_REF_TYPE" = "branch" ]; then
+            git push gitlab main:main
+          fi
+
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            git push gitlab "$GITHUB_REF_NAME:$GITHUB_REF_NAME"
+          fi
