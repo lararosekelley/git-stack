@@ -1,4 +1,7 @@
 use clap::{ArgAction, Parser, Subcommand};
+use clap_complete::engine::ArgValueCompleter;
+
+use crate::completions;
 
 #[derive(Debug, Parser)]
 #[command(name = "git-stk")]
@@ -14,25 +17,41 @@ pub enum Command {
     /// Create a new child branch from the current branch.
     New { branch: String },
     /// Print a branch's stack parent.
-    Parent { branch: Option<String> },
+    Parent {
+        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
+        branch: Option<String>,
+    },
     /// Print a branch's stack children.
-    Children { branch: Option<String> },
+    Children {
+        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
+        branch: Option<String>,
+    },
     /// Check out the current branch's stack parent.
     Up,
     /// Check out a stack child of the current branch.
-    Down { branch: Option<String> },
+    Down {
+        #[arg(add = ArgValueCompleter::new(completions::child_branch_candidates))]
+        branch: Option<String>,
+    },
     /// Print the current stack.
     List,
     /// Print local and remote stack status for a branch.
-    Status { branch: Option<String> },
+    Status {
+        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
+        branch: Option<String>,
+    },
     /// Attach an existing branch to a parent.
     Adopt {
+        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
         branch: String,
-        #[arg(long)]
+        #[arg(long, add = ArgValueCompleter::new(completions::branch_candidates))]
         parent: String,
     },
     /// Remove stack parent metadata from a branch.
-    Detach { branch: Option<String> },
+    Detach {
+        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
+        branch: Option<String>,
+    },
     /// Rebase the current branch and descendants onto their stack parents.
     Restack {
         /// Pass --update-refs to git rebase.
@@ -55,9 +74,13 @@ pub enum Command {
     /// Print detected review provider.
     Provider,
     /// Print the review request for a branch.
-    Review { branch: Option<String> },
+    Review {
+        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
+        branch: Option<String>,
+    },
     /// Sync local stack metadata from remote review requests.
     Sync {
+        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
         branch: Option<String>,
         /// Print what would change without updating local metadata.
         #[arg(long, action = ArgAction::SetTrue)]
@@ -65,6 +88,7 @@ pub enum Command {
     },
     /// Create or update a remote review request for a branch.
     Submit {
+        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
         branch: Option<String>,
         /// Print what would change without creating or updating reviews.
         #[arg(long, action = ArgAction::SetTrue)]
@@ -102,6 +126,7 @@ pub enum Command {
     },
     /// Clean up local metadata for merged review requests.
     Cleanup {
+        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
         branch: Option<String>,
         /// Print what would change without updating local metadata.
         #[arg(long, action = ArgAction::SetTrue)]

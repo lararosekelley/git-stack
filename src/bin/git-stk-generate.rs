@@ -2,8 +2,9 @@ use std::{fs, path::PathBuf};
 
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand, ValueEnum};
-use clap_complete::{Shell, generate_to};
+use clap_complete::Shell;
 use git_stk::cli::Cli;
+use git_stk::completions;
 
 #[derive(Debug, Parser)]
 #[command(name = "git-stk-generate")]
@@ -85,8 +86,12 @@ fn generate_completions(out_dir: &PathBuf, shell: Option<CompletionShell>) -> Re
     );
 
     for shell in shells {
-        let mut command = Cli::command();
-        let path = generate_to(Shell::from(shell), &mut command, "git-stk", out_dir)?;
+        let shell = Shell::from(shell);
+        let path = out_dir.join(format!("git-stk.{shell}"));
+        let mut file = fs::File::create(&path)?;
+        // Plain binary name: distributable files must rely on PATH rather
+        // than a build-machine location.
+        completions::write(shell, "git-stk", &mut file)?;
         println!("generated {}", path.display());
     }
 

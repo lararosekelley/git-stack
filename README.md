@@ -36,8 +36,10 @@ git stk upgrade
 
 ## Shell Completions
 
-`git stk setup` configures these automatically. The installed binary prints its own completions, so they stay
-in sync across upgrades:
+`git stk setup` configures these automatically. Completions are dynamic: the shell asks the binary for
+candidates at completion time, so subcommands, flags, and even branch names complete (`git stk down <TAB>`
+offers only the current branch's stack children). The installed binary prints its own registration script,
+so completions stay in sync across upgrades:
 
 ```sh
 # bash: add to ~/.bashrc
@@ -47,7 +49,7 @@ source <(git stk completions bash)
 git stk completions zsh > "${fpath[1]}/_git-stk"
 ```
 
-Elvish, fish, and PowerShell are also supported. The bash output includes a `_git_stk` wrapper so git's own
+Elvish, fish, and PowerShell are also supported. The bash and zsh output includes a wrapper so git's own
 completion can complete `git stk <TAB>` in addition to `git-stk <TAB>`.
 
 ## Install For Development
