@@ -87,6 +87,18 @@ pub fn rebase_onto(parent: &str, base: &str, branch: &str, update_refs: bool) ->
     status(&args).with_context(|| format!("failed to rebase {branch} onto {parent} from {base}"))
 }
 
+pub fn rev_parse(rev: &str) -> Result<String> {
+    let spec = format!("{rev}^{{commit}}");
+    output(&["rev-parse", "--verify", &spec]).with_context(|| format!("failed to resolve {rev}"))
+}
+
+/// Default branch of `remote` (from its locally-known HEAD symref), if any.
+pub fn remote_default_branch(remote: &str) -> Option<String> {
+    let reference = format!("refs/remotes/{remote}/HEAD");
+    let full = output(&["symbolic-ref", "--short", &reference]).ok()?;
+    full.strip_prefix(&format!("{remote}/")).map(str::to_owned)
+}
+
 pub fn merge_base(a: &str, b: &str) -> Result<String> {
     output(&["merge-base", a, b])
         .with_context(|| format!("failed to find merge base of {a} and {b}"))

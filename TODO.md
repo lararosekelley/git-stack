@@ -62,9 +62,12 @@
       primary output
 - [ ] `top` / `bottom` navigation commands
 - [ ] Better multi-child UX on `down` (interactive pick instead of erroring)
-- [ ] `repair` command: rebuild/verify local metadata from provider state in one shot
-- [ ] Ancestry-inference fallback for parent discovery (priority chain from the original design:
-      local config -> PR base -> commit ancestry -> ask the user; only the first two exist today)
+- [x] `repair` command: rebuild/verify local metadata from provider state in one shot. Done - and it
+      implements the full original priority chain (review base -> nearest-ancestor inference -> report for
+      manual `adopt`), verifies/re-derives stale fork points, never touches the trunk, and degrades
+      gracefully without a remote or provider CLI. Motivated by the great config-wipe incident
+- [x] Ancestry-inference fallback for parent discovery - folded into `repair` (see above); per-command
+      fallback is unnecessary now that one command rebuilds everything
 - [ ] Handle branch renames (metadata under `branch.<old>.stackParent` goes stale)
 - [ ] `git stk guide` command to provide an example to try the tool out?
 

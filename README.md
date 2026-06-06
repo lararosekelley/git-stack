@@ -97,6 +97,7 @@ git stk config
 git stk status [branch]
 git stk review [branch]
 git stk sync [branch] [--dry-run]
+git stk repair [--dry-run]
 git stk submit [branch] [--dry-run] [--push | --no-push]
 git stk submit --stack [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--delete-branch]
@@ -140,6 +141,10 @@ Everything is optional; defaults shown below:
 The tool also manages per-branch metadata: `branch.<name>.stkParent` (the stack parent) and
 `branch.<name>.stkBase` (the recorded fork point). These are written by `new`, `adopt`, `sync`, `restack`,
 and `cleanup`; you normally never touch them by hand.
+
+Branches are the real state; the metadata is just annotation. If it is ever lost or stale, `git stk repair`
+rebuilds it from review bases (when `gh`/`glab` is available) and branch ancestry, and verifies recorded
+fork points. Anything it cannot resolve safely is reported for a manual `git stk adopt`.
 
 Inspect everything stk reads or wrote with:
 

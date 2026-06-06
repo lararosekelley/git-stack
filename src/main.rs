@@ -37,6 +37,7 @@ fn main() -> Result<()> {
         Command::Provider => providers::print_provider(),
         Command::Review { branch } => providers::print_review(branch.as_deref()),
         Command::Sync { branch, dry_run } => providers::sync_stack(branch.as_deref(), dry_run),
+        Command::Repair { dry_run } => providers::repair(dry_run),
         Command::Submit {
             branch,
             dry_run,

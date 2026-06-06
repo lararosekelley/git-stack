@@ -2441,3 +2441,169 @@ fn restack_ignores_rebase_update_refs_git_config() {
         "rebase.updateRefs must not enable --update-refs: {stdout}"
     );
 }
+
+#[test]
+fn repair_reconstructs_wiped_stack_from_ancestry() {
+    let repo = TestRepo::new();
+
+    // Build a 3-branch stack with real commits, then wipe all metadata -
+    // the config-blown-away incident.
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+    repo.stack().args(["new", "feature/c"]).assert().success();
+    repo.commit_file("c.txt", "c\n", "c work");
+
+    for branch in ["feature/a", "feature/b", "feature/c"] {
+        repo.git(["config", "--unset", &format!("branch.{branch}.stkParent")]);
+        repo.git(["config", "--unset", &format!("branch.{branch}.stkBase")]);
+    }
+
+    repo.stack()
+        .arg("repair")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "feature/a: set parent main (from ancestry)",
+        ))
+        .stdout(predicates::str::contains(
+            "feature/b: set parent feature/a (from ancestry)",
+        ))
+        .stdout(predicates::str::contains(
+            "feature/c: set parent feature/b (from ancestry)",
+        ))
+        .stdout(predicates::str::contains(
+            "repair complete: 3 repaired, 0 verified, 0 unresolved",
+        ));
+
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
+        "feature/a"
+    );
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkBase"]),
+        repo.git(["rev-parse", "feature/a"])
+    );
+    // Trunk must never be assigned a parent.
+    assert_eq!(
+        repo.git_status(["config", "--get", "branch.main.stkParent"])
+            .status
+            .code(),
+        Some(1)
+    );
+}
+
+#[test]
+fn repair_prefers_provider_review_base_over_ancestry() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+    repo.git(["config", "--unset", "branch.feature/b.stkParent"]);
+    repo.git(["config", "--unset", "branch.feature/b.stkBase"]);
+
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/b*)
+    cat <<'JSON'
+[{"number":7,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/7"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .arg("repair")
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "feature/b: set parent feature/a (from github review #7)",
+        ));
+
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
+        "feature/a"
+    );
+}
+
+#[test]
+fn repair_re_records_stale_fork_point() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.git([
+        "config",
+        "branch.feature/a.stkBase",
+        "0000000000000000000000000000000000000000",
+    ]);
+
+    repo.stack()
+        .arg("repair")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "feature/a: re-recorded fork point from main",
+        ))
+        .stdout(predicates::str::contains("1 repaired, 0 verified"));
+
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/a.stkBase"]),
+        repo.git(["rev-parse", "main"])
+    );
+}
+
+#[test]
+fn repair_dry_run_changes_nothing() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.git(["config", "--unset", "branch.feature/a.stkParent"]);
+    repo.git(["config", "--unset", "branch.feature/a.stkBase"]);
+
+    repo.stack()
+        .args(["repair", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "feature/a: would set parent main (from ancestry)",
+        ));
+
+    assert_eq!(
+        repo.git_status(["config", "--get", "branch.feature/a.stkParent"])
+            .status
+            .code(),
+        Some(1)
+    );
+}
+
+#[test]
+fn repair_reports_unrepairable_branches() {
+    let repo = TestRepo::new();
+
+    // A branch with no commits of its own and equal tip to main: direction
+    // is ambiguous, so repair must not guess.
+    repo.git(["switch", "-c", "feature/empty"]);
+    repo.git(["switch", "main"]);
+
+    repo.stack()
+        .arg("repair")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("feature/empty: no parent found"))
+        .stdout(predicates::str::contains(
+            "0 repaired, 0 verified, 1 unresolved",
+        ));
+}
