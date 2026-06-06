@@ -22,6 +22,8 @@ pub enum Command {
     Down { branch: Option<String> },
     /// Print the current stack.
     List,
+    /// Print local and remote stack status for a branch.
+    Status { branch: Option<String> },
     /// Attach an existing branch to a parent.
     Adopt {
         branch: String,
@@ -43,6 +45,34 @@ pub enum Command {
     Continue,
     /// Abort an interrupted restack.
     Abort,
+    /// Print detected review provider.
+    Provider,
+    /// Print the review request for a branch.
+    Review { branch: Option<String> },
+    /// Sync local stack metadata from remote review requests.
+    Sync {
+        branch: Option<String>,
+        /// Print what would change without updating local metadata.
+        #[arg(long, action = ArgAction::SetTrue)]
+        dry_run: bool,
+    },
+    /// Create or update a remote review request for a branch.
+    Submit {
+        branch: Option<String>,
+        /// Print what would change without creating or updating reviews.
+        #[arg(long, action = ArgAction::SetTrue)]
+        dry_run: bool,
+        /// Submit the branch and its descendants parent-first.
+        #[arg(long, conflicts_with = "branch")]
+        stack: bool,
+    },
+    /// Clean up local metadata for merged review requests.
+    Cleanup {
+        branch: Option<String>,
+        /// Print what would change without updating local metadata.
+        #[arg(long, action = ArgAction::SetTrue)]
+        dry_run: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
