@@ -1,7 +1,6 @@
-use clap::{ArgAction, Parser, Subcommand};
-use clap_complete::engine::ArgValueCompleter;
+use clap::{Parser, Subcommand};
 
-use crate::completions;
+use crate::commands;
 
 #[derive(Debug, Parser)]
 #[command(name = "git-stk")]
@@ -14,145 +13,28 @@ pub struct Cli {
 
 #[derive(Debug, Subcommand)]
 pub enum Command {
-    /// Create a new child branch from the current branch.
-    New { branch: String },
-    /// Print a branch's stack parent.
-    Parent {
-        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
-        branch: Option<String>,
-    },
-    /// Print a branch's stack children.
-    Children {
-        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
-        branch: Option<String>,
-    },
-    /// Move up the stack: check out a child of the current branch.
-    Up {
-        #[arg(add = ArgValueCompleter::new(completions::child_branch_candidates))]
-        branch: Option<String>,
-    },
-    /// Move down the stack: check out the current branch's parent.
-    Down,
-    /// Print the current stack.
-    List {
-        /// Print a shareable markdown summary with PR links and states.
-        #[arg(long, action = ArgAction::SetTrue)]
-        markdown: bool,
-    },
-    /// Print local and remote stack status for a branch.
-    Status {
-        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
-        branch: Option<String>,
-    },
-    /// Attach an existing branch to a parent.
-    Adopt {
-        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
-        branch: String,
-        #[arg(long, add = ArgValueCompleter::new(completions::branch_candidates))]
-        parent: String,
-    },
-    /// Remove stack parent metadata from a branch.
-    Detach {
-        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
-        branch: Option<String>,
-    },
-    /// Rebase the current branch and descendants onto their stack parents.
-    Restack {
-        /// Pass --update-refs to git rebase.
-        #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_update_refs")]
-        update_refs: bool,
-        /// Do not pass --update-refs to git rebase.
-        #[arg(long, action = ArgAction::SetTrue)]
-        no_update_refs: bool,
-        /// Force-push (with lease) every rebased branch afterwards.
-        #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_push")]
-        push: bool,
-        /// Do not push rebased branches, overriding stk.pushOnRestack.
-        #[arg(long, action = ArgAction::SetTrue)]
-        no_push: bool,
-    },
-    /// Continue an interrupted restack after resolving conflicts.
-    Continue,
-    /// Abort an interrupted restack.
-    Abort,
-    /// Print detected review provider.
-    Provider,
-    /// Print the review request for a branch.
-    Review {
-        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
-        branch: Option<String>,
-    },
-    /// Sync local stack metadata from remote review requests.
-    Sync {
-        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
-        branch: Option<String>,
-        /// Print what would change without updating local metadata.
-        #[arg(long, action = ArgAction::SetTrue)]
-        dry_run: bool,
-    },
-    /// Rebuild or verify local stack metadata from reviews and ancestry.
-    Repair {
-        /// Print what would change without updating local metadata.
-        #[arg(long, action = ArgAction::SetTrue)]
-        dry_run: bool,
-    },
-    /// Create or update a remote review request for a branch.
-    Submit {
-        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
-        branch: Option<String>,
-        /// Print what would change without creating or updating reviews.
-        #[arg(long, action = ArgAction::SetTrue)]
-        dry_run: bool,
-        /// Submit the branch and its descendants parent-first.
-        #[arg(long, conflicts_with = "branch")]
-        stack: bool,
-        /// Push branches (-u --force-with-lease) before submitting.
-        #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_push")]
-        push: bool,
-        /// Do not push branches, overriding stk.pushOnSubmit.
-        #[arg(long, action = ArgAction::SetTrue)]
-        no_push: bool,
-    },
-    /// Print all stk git config settings and branch metadata.
-    Config,
-    /// Print shell completions.
-    Completions {
-        /// Shell to print completions for.
-        #[arg(value_enum)]
-        shell: clap_complete::Shell,
-    },
-    /// Install the man page and wire up shell completions.
-    Setup {
-        /// Skip confirmation prompts.
-        #[arg(long, short = 'y', action = ArgAction::SetTrue)]
-        yes: bool,
-        /// Only re-render generated assets (man page); never touch shell rc files.
-        #[arg(long, action = ArgAction::SetTrue, conflicts_with = "yes")]
-        refresh: bool,
-    },
-    /// Upgrade git-stk to the latest release.
-    Upgrade {
-        /// Build and install the latest unreleased commit instead.
-        #[arg(long, action = ArgAction::SetTrue, conflicts_with = "force")]
-        head: bool,
-        /// Reinstall the latest release even when already up to date.
-        #[arg(long, action = ArgAction::SetTrue)]
-        force: bool,
-        /// Skip the --head confirmation prompt.
-        #[arg(long, short = 'y', action = ArgAction::SetTrue, requires = "head")]
-        yes: bool,
-    },
-    /// Clean up local metadata for merged review requests.
-    Cleanup {
-        #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
-        branch: Option<String>,
-        /// Print what would change without updating local metadata.
-        #[arg(long, action = ArgAction::SetTrue)]
-        dry_run: bool,
-        /// Delete cleaned merged branches after updating stack metadata.
-        #[arg(long, action = ArgAction::SetTrue)]
-        delete_branch: bool,
-    },
+    New(commands::new::New),
+    Parent(commands::parent::Parent),
+    Children(commands::children::Children),
+    Up(commands::up::Up),
+    Down(commands::down::Down),
+    List(commands::list::List),
+    Status(commands::status::Status),
+    Adopt(commands::adopt::Adopt),
+    Detach(commands::detach::Detach),
+    Restack(commands::restack::Restack),
+    Continue(commands::restack::Continue),
+    Abort(commands::restack::Abort),
+    Provider(commands::provider::Provider),
+    Review(commands::review::Review),
+    Sync(commands::sync::Sync),
+    Repair(commands::repair::Repair),
+    Submit(commands::submit::Submit),
+    Config(commands::config::Config),
+    Completions(commands::completions::Completions),
+    Setup(commands::setup::Setup),
+    Upgrade(commands::upgrade::Upgrade),
+    Cleanup(commands::cleanup::Cleanup),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
