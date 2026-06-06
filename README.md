@@ -22,6 +22,12 @@ curl https://larakelley.com/sh/git-stk | bash
 Installers are also attached to [GitHub Releases](https://github.com/lararosekelley/git-stk/releases), or install
 from [crates.io](https://crates.io/crates/git-stk) with `cargo install git-stk --locked`.
 
+Then install the man page and wire up shell completions (idempotent; prompts before touching your shell rc):
+
+```sh
+git stk setup
+```
+
 Upgrade an installer-managed copy with:
 
 ```sh
@@ -30,7 +36,8 @@ git stk upgrade
 
 ## Shell Completions
 
-The installed binary prints its own completions, so they stay in sync across upgrades:
+`git stk setup` configures these automatically. The installed binary prints its own completions, so they stay
+in sync across upgrades:
 
 ```sh
 # bash: add to ~/.bashrc

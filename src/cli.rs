@@ -72,6 +72,12 @@ pub enum Command {
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },
+    /// Install the man page and wire up shell completions.
+    Setup {
+        /// Skip confirmation prompts.
+        #[arg(long, short = 'y', action = ArgAction::SetTrue)]
+        yes: bool,
+    },
     /// Upgrade git-stk to the latest release.
     Upgrade {
         /// Build and install the latest unreleased commit instead.
