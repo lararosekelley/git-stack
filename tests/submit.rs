@@ -2,6 +2,7 @@ use std::{fs, process::Command};
 mod common;
 
 use common::TestRepo;
+use predicates::prelude::PredicateBooleanExt;
 
 #[test]
 fn submit_creates_github_pr_when_none_exists() {
@@ -606,4 +607,50 @@ printf '[]\n'
         .stdout(predicates::str::contains(
             "would create feature/b -> feature/a",
         ));
+}
+
+#[test]
+fn bare_submit_uses_submit_stack_config() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["config", "stk.submitStack", "true"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+printf '[]\n'
+"##,
+    );
+
+    // Bare submit from the leaf: config turns on whole-stack mode.
+    repo.stack()
+        .args(["submit", "--dry-run"])
+        .env("PATH", path.clone())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("would create feature/a -> main"))
+        .stdout(predicates::str::contains(
+            "would create feature/b -> feature/a",
+        ));
+
+    // --no-stack overrides the config back to single-branch.
+    repo.stack()
+        .args(["submit", "--dry-run", "--no-stack"])
+        .env("PATH", path.clone())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "would create feature/b -> feature/a",
+        ))
+        .stdout(predicates::str::contains("feature/a -> main").not());
+
+    // An explicit branch also means single-branch, config or not.
+    repo.stack()
+        .args(["submit", "feature/a", "--dry-run"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("would create feature/a -> main"))
+        .stdout(predicates::str::contains("feature/b").not());
 }

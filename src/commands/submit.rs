@@ -20,6 +20,9 @@ pub struct Submit {
     /// Submit the whole stack parent-first, from anywhere in it.
     #[arg(long, conflicts_with = "branch")]
     stack: bool,
+    /// Submit only the current branch, overriding stk.submitStack.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with = "stack")]
+    no_stack: bool,
     /// Push branches (-u --force-with-lease) before submitting.
     #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_push")]
     push: bool,
@@ -30,9 +33,19 @@ pub struct Submit {
 
 impl Run for Submit {
     fn run(self) -> Result<()> {
+        // Stack mode: --stack forces it on; --no-stack or an explicit branch
+        // forces it off; otherwise stk.submitStack decides.
+        let submit_stack = if self.stack {
+            true
+        } else if self.no_stack || self.branch.is_some() {
+            false
+        } else {
+            settings::bool_setting(settings::SUBMIT_STACK_KEY)?
+        };
+
         submit(
             self.branch.as_deref(),
-            self.stack,
+            submit_stack,
             self.dry_run,
             PushMode::from_flags(self.push, self.no_push),
         )
