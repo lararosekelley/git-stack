@@ -1177,8 +1177,15 @@ fn cleanup_delete_branch_removes_cleaned_merged_branch() {
     let repo = TestRepo::new();
     repo.git(["config", "stack.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
+    // Real commits + a squash merge: feature/a's commits are NOT
+    // ancestry-merged into main afterwards, so `git branch -d` would refuse.
+    // Deletion must trust the provider-verified merge state instead.
+    repo.commit_file("a.txt", "one\n", "parent change one");
+    repo.commit_file("a.txt", "one\ntwo\n", "parent change two");
     repo.stack().args(["new", "feature/b"]).assert().success();
     repo.git(["switch", "main"]);
+    repo.git(["merge", "--squash", "feature/a"]);
+    repo.git(["commit", "-m", "parent changes (#12)"]);
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
@@ -1960,4 +1967,18 @@ esac
     let recorded = fs::read_to_string(repo.path().join("update-description-args.txt"))
         .expect("update description args");
     assert!(recorded.contains("Depends on !34"));
+}
+
+#[test]
+fn version_flag_prints_name_and_version() {
+    let repo = TestRepo::new();
+
+    repo.stack()
+        .arg("--version")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(concat!(
+            "git-stk ",
+            env!("CARGO_PKG_VERSION")
+        )));
 }
