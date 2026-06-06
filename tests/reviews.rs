@@ -164,101 +164,8 @@ JSON
 fn sync_sets_parent_from_github_pr_base() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
-    repo.git(["switch", "-c", "feature/b"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-"##,
-    );
-
-    repo.stack()
-        .args(["sync", "feature/b"])
-        .env("PATH", path)
-        .assert()
-        .success()
-        .stdout(predicates::str::contains(
-            "synced feature/b -> feature/a (#12)",
-        ));
-
-    assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
-        "feature/a"
-    );
-}
-
-#[test]
-fn sync_dry_run_reports_parent_without_writing_config() {
-    let repo = TestRepo::new();
-    repo.git(["config", "stk.provider", "github"]);
-    repo.git(["switch", "-c", "feature/b"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-"##,
-    );
-
-    repo.stack()
-        .args(["sync", "--dry-run", "feature/b"])
-        .env("PATH", path)
-        .assert()
-        .success()
-        .stdout(predicates::str::contains(
-            "would sync feature/b -> feature/a (#12)",
-        ))
-        .stdout(predicates::str::contains(
-            "sync complete: 1 would be synced, 0 skipped",
-        ));
-
-    assert_eq!(
-        repo.git_status(["config", "--get", "branch.feature/b.stkParent"])
-            .status
-            .code(),
-        Some(1)
-    );
-}
-
-#[test]
-fn sync_sets_parent_from_gitlab_mr_target() {
-    let repo = TestRepo::new();
-    repo.git(["config", "stk.provider", "gitlab"]);
-    let path = repo.fake_cli(
-        "glab",
-        r##"#!/usr/bin/env sh
-cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
-JSON
-"##,
-    );
-
-    repo.stack()
-        .args(["sync", "feature/b"])
-        .env("PATH", path)
-        .assert()
-        .success()
-        .stdout(predicates::str::contains(
-            "synced feature/b -> feature/a (!34)",
-        ));
-
-    assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
-        "feature/a"
-    );
-}
-
-#[test]
-fn sync_all_local_branches_skips_branches_without_reviews() {
-    let repo = TestRepo::new();
-    repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/a"]);
-    repo.git(["switch", "main"]);
     repo.git(["switch", "-c", "feature/b"]);
-    repo.git(["switch", "main"]);
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
@@ -282,13 +189,120 @@ esac
         .success()
         .stdout(predicates::str::contains(
             "synced feature/b -> feature/a (#12)",
-        ))
-        .stdout(predicates::str::contains("sync complete: 1 synced"));
+        ));
 
     assert_eq!(
         repo.git(["config", "--get", "branch.feature/b.stkParent"]),
         "feature/a"
     );
+}
+
+#[test]
+fn sync_dry_run_reports_parent_without_writing_config() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["switch", "-c", "feature/a"]);
+    repo.git(["switch", "-c", "feature/b"]);
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/b*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["sync", "--dry-run"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "would sync feature/b -> feature/a (#12)",
+        ))
+        .stdout(predicates::str::contains(
+            "would restack the remaining stack",
+        ));
+
+    assert_eq!(
+        repo.git_status(["config", "--get", "branch.feature/b.stkParent"])
+            .status
+            .code(),
+        Some(1)
+    );
+}
+
+#[test]
+fn sync_sets_parent_from_gitlab_mr_target() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "gitlab"]);
+    repo.git(["switch", "-c", "feature/a"]);
+    repo.git(["switch", "-c", "feature/b"]);
+    let path = repo.fake_cli(
+        "glab",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/b*)
+    cat <<'JSON'
+[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .arg("sync")
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "synced feature/b -> feature/a (!34)",
+        ));
+
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
+        "feature/a"
+    );
+}
+
+#[test]
+fn sync_skips_stack_branches_without_reviews() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+printf '[]\n'
+"##,
+    );
+
+    repo.stack()
+        .arg("sync")
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "skipped feature/a: no github review found",
+        ))
+        .stdout(predicates::str::contains(
+            "skipped feature/b: no github review found",
+        ))
+        .stdout(predicates::str::contains(
+            "sync complete: 0 synced, 2 skipped",
+        ));
 }
 
 #[test]
@@ -320,4 +334,137 @@ fn config_shows_defaults_and_branch_metadata() {
             "branch.feature/a.stkparent = main",
         ))
         .stdout(predicates::str::contains("branch.feature/a.stkbase = "));
+}
+
+#[test]
+fn sync_advances_the_merge_loop_end_to_end() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["config", "stk.pushOnRestack", "true"]);
+
+    // Stack: main -> feature/a -> feature/b, with real commits.
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+
+    let bare = repo.add_bare_origin(&["main", "feature/a", "feature/b"]);
+
+    // Simulate GitHub squash-merging feature/a: advance ORIGIN's main, then
+    // rewind local main so sync has something to fetch.
+    repo.git(["switch", "main"]);
+    repo.git(["merge", "--squash", "feature/a"]);
+    repo.git(["commit", "-m", "a work (#12)"]);
+    repo.git(["push", "origin", "main"]);
+    repo.git(["reset", "--hard", "HEAD~1"]);
+
+    // Stand on the MERGED branch: sync must move us off it.
+    repo.git(["switch", "feature/a"]);
+
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/a\ --state\ merged*)
+    cat <<'JSON'
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
+JSON
+    ;;
+  *feature/a*)
+    printf '[]\n'
+    ;;
+  *feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]
+JSON
+    ;;
+  pr\ edit*)
+    printf 'updated review\n'
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .arg("sync")
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("feature/a: review #12 is merged"))
+        .stdout(predicates::str::contains(
+            "next up: feature/b -> #13 https://github.com/owner/repo/pull/13",
+        ));
+
+    // Local main was fetched forward to the squash commit.
+    assert_eq!(
+        repo.git(["rev-parse", "main"]),
+        repo.remote_sha(&bare, "main")
+    );
+    // The merged branch is gone; we were moved to the survivor.
+    assert_eq!(repo.git(["branch", "--show-current"]), "feature/b");
+    assert_eq!(
+        repo.git_status(["branch", "--list", "feature/a"])
+            .stdout
+            .len(),
+        0
+    );
+    // feature/b was retargeted, restacked onto fetched main, and pushed.
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
+        "main"
+    );
+    assert_eq!(
+        repo.git(["merge-base", "main", "feature/b"]),
+        repo.git(["rev-parse", "main"])
+    );
+    assert_eq!(
+        repo.remote_sha(&bare, "feature/b"),
+        repo.git(["rev-parse", "feature/b"])
+    );
+}
+
+#[test]
+fn sync_reports_stack_complete_when_everything_merged() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+
+    let _bare = repo.add_bare_origin(&["main", "feature/a"]);
+    repo.git(["switch", "main"]);
+    repo.git(["merge", "--squash", "feature/a"]);
+    repo.git(["commit", "-m", "a work (#12)"]);
+    repo.git(["push", "origin", "main"]);
+    repo.git(["switch", "feature/a"]);
+
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *--state\ merged*)
+    cat <<'JSON'
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .arg("sync")
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "stack complete: everything merged into main",
+        ));
+
+    assert_eq!(repo.git(["branch", "--show-current"]), "main");
 }

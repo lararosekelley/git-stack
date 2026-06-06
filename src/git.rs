@@ -48,6 +48,17 @@ pub fn delete_branch(branch: &str) -> Result<()> {
     status(&["branch", "-D", branch]).with_context(|| format!("failed to delete branch {branch}"))
 }
 
+/// Fast-forward a local branch from its remote without checking it out.
+pub fn fetch_branch(remote: &str, branch: &str) -> Result<()> {
+    let refspec = format!("{branch}:{branch}");
+    status(&["fetch", remote, &refspec])
+        .with_context(|| format!("failed to fetch {branch} from {remote}"))
+}
+
+pub fn pull_ff_only() -> Result<()> {
+    status(&["pull", "--ff-only"]).context("failed to fast-forward from the remote")
+}
+
 pub fn push_force_with_lease(remote: &str, branches: &[String]) -> Result<()> {
     let mut args = vec!["push", "--force-with-lease", remote];
     args.extend(branches.iter().map(String::as_str));

@@ -121,12 +121,18 @@ git stk provider
 git stk config
 git stk status [branch]
 git stk review [branch]
-git stk sync [branch] [--dry-run]
+git stk sync [--dry-run] [--push | --no-push]
 git stk repair [--dry-run]
 git stk submit [branch] [--dry-run] [--push | --no-push]
 git stk submit [--stack | --no-stack] [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--delete-branch]
 ```
+
+`sync` is the merge-loop one-shot: it fetches the trunk (without leaving your branch), refreshes stack
+metadata from open reviews, cleans up merged branches (retargeting children and deleting), moves you off
+any branch it deletes, restacks and pushes the remainder, and ends by printing the next PR to merge -
+or `stack complete` when the loop is done. After squash-merging a PR, `git stk sync` is the only command
+you need.
 
 `submit --stack` and `restack` operate on the whole stack containing the current branch - walk to the
 root, then every branch above it - so it never matters where in the stack you are standing. With
