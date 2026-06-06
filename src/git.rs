@@ -55,6 +55,42 @@ pub fn rebase(parent: &str, branch: &str, update_refs: bool) -> Result<()> {
     status(&args).with_context(|| format!("failed to rebase {branch} onto {parent}"))
 }
 
+/// Rebase only the commits after `base`, replaying `base..branch` onto
+/// `parent`. Used when the recorded fork point is known so commits that
+/// landed upstream by squash or rebase are not replayed.
+pub fn rebase_onto(parent: &str, base: &str, branch: &str, update_refs: bool) -> Result<()> {
+    let mut args = vec!["rebase"];
+    if update_refs {
+        args.push("--update-refs");
+    }
+    args.extend(["--onto", parent, base, branch]);
+
+    status(&args).with_context(|| format!("failed to rebase {branch} onto {parent} from {base}"))
+}
+
+pub fn merge_base(a: &str, b: &str) -> Result<String> {
+    output(&["merge-base", a, b])
+        .with_context(|| format!("failed to find merge base of {a} and {b}"))
+}
+
+pub fn is_ancestor(ancestor: &str, descendant: &str) -> Result<bool> {
+    let output = Command::new("git")
+        .args(["merge-base", "--is-ancestor", ancestor, descendant])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .context("failed to run git merge-base --is-ancestor")?;
+
+    match output.status.code() {
+        Some(0) => Ok(true),
+        Some(1) => Ok(false),
+        _ => Err(command_error(
+            "git merge-base --is-ancestor",
+            &output.stderr,
+        )),
+    }
+}
+
 pub fn supports_rebase_update_refs() -> Result<bool> {
     let output = Command::new("git")
         .args(["rebase", "-h"])

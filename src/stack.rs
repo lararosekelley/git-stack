@@ -10,12 +10,14 @@ use crate::cli::UpdateRefsMode;
 use crate::git;
 
 const PARENT_KEY: &str = "stackParent";
+const BASE_KEY: &str = "stackBase";
 const STATE_FILE: &str = "stack-state";
 
 pub fn create_branch(branch: &str) -> Result<()> {
     let parent = git::current_branch()?;
     git::create_branch(branch)?;
     set_parent(branch, &parent)?;
+    record_base(branch, &parent);
     println!("created {branch} with parent {parent}");
     Ok(())
 }
@@ -98,6 +100,7 @@ pub fn adopt_branch(branch: &str, parent: &str) -> Result<()> {
     }
 
     set_parent(branch, parent)?;
+    record_base(branch, parent);
     println!("attached {branch} to {parent}");
     Ok(())
 }
@@ -107,6 +110,7 @@ pub fn detach_branch(branch: Option<&str>) -> Result<()> {
         .map(str::to_owned)
         .map_or_else(git::current_branch, Ok)?;
     unset_parent(&branch)?;
+    unset_base(&branch)?;
     println!("detached {branch}");
     Ok(())
 }
@@ -139,6 +143,8 @@ pub fn continue_restack() -> Result<()> {
         return Err(error);
     }
 
+    record_base(&state.branch, &state.parent);
+
     if state.remaining.is_empty() {
         clear_state()?;
         println!("restack complete");
@@ -170,6 +176,22 @@ pub fn set_parent_for_branch(branch: &str, parent: &str) -> Result<()> {
 
 pub fn unset_parent_for_branch(branch: &str) -> Result<()> {
     unset_parent(branch)
+}
+
+pub fn set_base_for_branch(branch: &str, base: &str) -> Result<()> {
+    git::config_set(&base_key(branch), base)
+}
+
+pub fn unset_base_for_branch(branch: &str) -> Result<()> {
+    unset_base(branch)
+}
+
+/// Record the fork point between a branch and its parent (best effort; e.g.
+/// unrelated histories have no merge base, which is not an error here).
+pub fn record_base(branch: &str, parent: &str) {
+    if let Ok(base) = git::merge_base(parent, branch) {
+        let _ = git::config_set(&base_key(branch), &base);
+    }
 }
 
 pub fn branch_and_descendants(branch: &str) -> Result<Vec<String>> {
@@ -231,7 +253,20 @@ fn restack_branches(
             println!("rebasing {branch} onto {parent}");
         }
 
-        if let Err(error) = git::rebase(parent, branch, update_refs) {
+        // Replay only the commits after the recorded fork point so commits
+        // that landed upstream via squash or rebase merges are not repeated.
+        // A base that is no longer an ancestor (stale or garbage) falls back
+        // to a plain rebase.
+        let base = match base_of(branch)? {
+            Some(base) if git::is_ancestor(&base, branch).unwrap_or(false) => Some(base),
+            _ => None,
+        };
+        let rebase_result = match &base {
+            Some(base) => git::rebase_onto(parent, base, branch, update_refs),
+            None => git::rebase(parent, branch, update_refs),
+        };
+
+        if let Err(error) = rebase_result {
             let remaining = branches[index + 1..].to_vec();
             RestackState {
                 branch: branch.to_owned(),
@@ -246,6 +281,8 @@ fn restack_branches(
             eprintln!("or run `git stk abort`");
             return Err(error);
         }
+
+        record_base(branch, parent);
     }
 
     clear_state()?;
@@ -331,6 +368,10 @@ fn parent_of(branch: &str) -> Result<Option<String>> {
     git::config_get(&parent_key(branch))
 }
 
+fn base_of(branch: &str) -> Result<Option<String>> {
+    git::config_get(&base_key(branch))
+}
+
 fn set_parent(branch: &str, parent: &str) -> Result<()> {
     git::config_set(&parent_key(branch), parent)
 }
@@ -339,8 +380,16 @@ fn unset_parent(branch: &str) -> Result<()> {
     git::config_unset(&parent_key(branch))
 }
 
+fn unset_base(branch: &str) -> Result<()> {
+    git::config_unset(&base_key(branch))
+}
+
 fn parent_key(branch: &str) -> String {
     format!("branch.{branch}.{PARENT_KEY}")
+}
+
+fn base_key(branch: &str) -> String {
+    format!("branch.{branch}.{BASE_KEY}")
 }
 
 #[derive(Debug, Eq, PartialEq)]
