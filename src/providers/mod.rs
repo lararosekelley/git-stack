@@ -1,9 +1,15 @@
 use std::{fmt, process::Command};
 
 use anyhow::{Context, Result, anyhow, bail};
-use serde_json::Value;
 
 use crate::{git, stack};
+
+mod github;
+mod gitlab;
+mod json;
+
+use github::GitHubProvider;
+use gitlab::GitLabProvider;
 
 const PROVIDER_KEY: &str = "stk.provider";
 const REMOTE_KEY: &str = "stk.remote";
@@ -84,141 +90,6 @@ pub trait ReviewProvider {
     fn review_body(&self, review: &ReviewRequest) -> Result<String>;
 
     fn update_review_body(&self, review: &ReviewRequest, body: &str) -> Result<String>;
-}
-
-struct GitHubProvider;
-
-struct GitLabProvider;
-
-impl ReviewProvider for GitHubProvider {
-    fn review_for_branch(&self, branch: &str) -> Result<Option<ReviewRequest>> {
-        let output = command_output(
-            "gh",
-            &[
-                "pr",
-                "list",
-                "--head",
-                branch,
-                "--json",
-                "number,state,baseRefName,headRefName,url,title",
-            ],
-        )?;
-        if let Some(review) = parse_github_review(&output)? {
-            return Ok(Some(review));
-        }
-
-        // gh pr list only returns open pull requests by default; check merged
-        // ones too so cleanup can see landed reviews.
-        let output = command_output(
-            "gh",
-            &[
-                "pr",
-                "list",
-                "--head",
-                branch,
-                "--state",
-                "merged",
-                "--json",
-                "number,state,baseRefName,headRefName,url,title",
-            ],
-        )?;
-        parse_github_review(&output)
-    }
-
-    fn create_review(&self, branch: &str, base: &str) -> Result<String> {
-        command_output(
-            "gh",
-            &["pr", "create", "--head", branch, "--base", base, "--fill"],
-        )
-    }
-
-    fn update_review_base(&self, review: &ReviewRequest, base: &str) -> Result<String> {
-        command_output("gh", &["pr", "edit", review.id_value(), "--base", base])
-    }
-
-    fn review_body(&self, review: &ReviewRequest) -> Result<String> {
-        let output = command_output("gh", &["pr", "view", review.id_value(), "--json", "body"])?;
-        parse_body_field(&output, "body")
-    }
-
-    fn update_review_body(&self, review: &ReviewRequest, body: &str) -> Result<String> {
-        command_output("gh", &["pr", "edit", review.id_value(), "--body", body])
-    }
-}
-
-impl ReviewProvider for GitLabProvider {
-    fn review_for_branch(&self, branch: &str) -> Result<Option<ReviewRequest>> {
-        let output = command_output(
-            "glab",
-            &["mr", "list", "--source-branch", branch, "--output", "json"],
-        )?;
-        if let Some(review) = parse_gitlab_review(&output)? {
-            return Ok(Some(review));
-        }
-
-        // glab mr list only returns open merge requests by default; check
-        // merged ones too so cleanup can see landed reviews.
-        let output = command_output(
-            "glab",
-            &[
-                "mr",
-                "list",
-                "--source-branch",
-                branch,
-                "--merged",
-                "--output",
-                "json",
-            ],
-        )?;
-        parse_gitlab_review(&output)
-    }
-
-    fn create_review(&self, branch: &str, base: &str) -> Result<String> {
-        command_output(
-            "glab",
-            &[
-                "mr",
-                "create",
-                "--source-branch",
-                branch,
-                "--target-branch",
-                base,
-                "--fill",
-            ],
-        )
-    }
-
-    fn update_review_base(&self, review: &ReviewRequest, base: &str) -> Result<String> {
-        command_output(
-            "glab",
-            &["mr", "update", review.id_value(), "--target-branch", base],
-        )
-    }
-
-    fn review_body(&self, review: &ReviewRequest) -> Result<String> {
-        let output = command_output(
-            "glab",
-            &["mr", "view", review.id_value(), "--output", "json"],
-        )?;
-        parse_body_field(&output, "description")
-    }
-
-    fn update_review_body(&self, review: &ReviewRequest, body: &str) -> Result<String> {
-        command_output(
-            "glab",
-            &["mr", "update", review.id_value(), "--description", body],
-        )
-    }
-}
-
-fn parse_body_field(output: &str, field: &str) -> Result<String> {
-    let value: serde_json::Value =
-        serde_json::from_str(output).context("failed to parse provider JSON")?;
-    Ok(value
-        .get(field)
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or_default()
-        .to_owned())
 }
 
 pub fn print_provider() -> Result<()> {
@@ -1072,83 +943,6 @@ fn command_output(program: &str, args: &[&str]) -> Result<String> {
     }
 }
 
-fn parse_github_review(output: &str) -> Result<Option<ReviewRequest>> {
-    let Some(review) = first_json_item(output)? else {
-        return Ok(None);
-    };
-
-    Ok(Some(ReviewRequest {
-        id: format!("#{}", required_string(&review, &["number"])?),
-        branch: required_string(&review, &["headRefName"])?,
-        base: required_string(&review, &["baseRefName"])?,
-        state: parse_state(&required_string(&review, &["state"])?),
-        url: required_string(&review, &["url"])?,
-        title: optional_string(&review, "title"),
-    }))
-}
-
-fn parse_gitlab_review(output: &str) -> Result<Option<ReviewRequest>> {
-    let Some(review) = first_json_item(output)? else {
-        return Ok(None);
-    };
-
-    Ok(Some(ReviewRequest {
-        id: format!("!{}", required_string(&review, &["iid", "id"])?),
-        branch: required_string(&review, &["source_branch", "sourceBranch"])?,
-        base: required_string(&review, &["target_branch", "targetBranch"])?,
-        state: parse_state(&required_string(&review, &["state"])?),
-        url: required_string(&review, &["web_url", "webUrl", "url"])?,
-        title: optional_string(&review, "title"),
-    }))
-}
-
-fn optional_string(value: &Value, key: &str) -> String {
-    value
-        .get(key)
-        .and_then(Value::as_str)
-        .unwrap_or_default()
-        .to_owned()
-}
-
-fn first_json_item(output: &str) -> Result<Option<Value>> {
-    let value: Value = serde_json::from_str(output).context("failed to parse provider JSON")?;
-    match value {
-        Value::Array(items) => Ok(items.into_iter().next()),
-        Value::Object(_) => Ok(Some(value)),
-        _ => bail!("provider JSON must be an object or array"),
-    }
-}
-
-fn required_string(value: &Value, keys: &[&str]) -> Result<String> {
-    for key in keys {
-        if let Some(field) = value.get(*key) {
-            if let Some(value) = field.as_str() {
-                return Ok(value.to_owned());
-            }
-            if let Some(value) = field.as_i64() {
-                return Ok(value.to_string());
-            }
-            if let Some(value) = field.as_u64() {
-                return Ok(value.to_string());
-            }
-        }
-    }
-
-    bail!(
-        "provider JSON missing required field: {}",
-        keys.join(" or ")
-    )
-}
-
-fn parse_state(state: &str) -> ReviewState {
-    match state.to_ascii_lowercase().as_str() {
-        "open" | "opened" => ReviewState::Open,
-        "merged" => ReviewState::Merged,
-        "closed" => ReviewState::Closed,
-        _ => ReviewState::Unknown(state.to_owned()),
-    }
-}
-
 fn parent_key(branch: &str) -> String {
     format!("branch.{branch}.stkParent")
 }
@@ -1176,112 +970,6 @@ impl ReviewRequest {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn parse_github_review_reads_first_array_item() {
-        let review = parse_github_review(
-            r#"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"#,
-        )
-        .expect("parse review")
-        .expect("review exists");
-
-        assert_eq!(
-            review,
-            ReviewRequest {
-                id: "#12".to_owned(),
-                branch: "feature/a".to_owned(),
-                base: "main".to_owned(),
-                state: ReviewState::Open,
-                url: "https://github.com/owner/repo/pull/12".to_owned(),
-                title: String::new(),
-            }
-        );
-    }
-
-    #[test]
-    fn parse_gitlab_review_reads_snake_case_fields() {
-        let review = parse_gitlab_review(
-            r#"[{"iid":34,"state":"merged","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/owner/repo/-/merge_requests/34"}]"#,
-        )
-        .expect("parse review")
-        .expect("review exists");
-
-        assert_eq!(
-            review,
-            ReviewRequest {
-                id: "!34".to_owned(),
-                branch: "feature/b".to_owned(),
-                base: "feature/a".to_owned(),
-                state: ReviewState::Merged,
-                url: "https://gitlab.com/owner/repo/-/merge_requests/34".to_owned(),
-                title: String::new(),
-            }
-        );
-    }
-
-    #[test]
-    fn parse_gitlab_review_reads_camel_case_fields() {
-        let review = parse_gitlab_review(
-            r#"[{"id":34,"state":"closed","targetBranch":"feature/a","sourceBranch":"feature/b","webUrl":"https://gitlab.com/owner/repo/-/merge_requests/34"}]"#,
-        )
-        .expect("parse review")
-        .expect("review exists");
-
-        assert_eq!(review.id, "!34");
-        assert_eq!(review.branch, "feature/b");
-        assert_eq!(review.base, "feature/a");
-        assert_eq!(review.state, ReviewState::Closed);
-        assert_eq!(
-            review.url,
-            "https://gitlab.com/owner/repo/-/merge_requests/34"
-        );
-    }
-
-    #[test]
-    fn parse_review_accepts_object_output() {
-        let review = parse_github_review(
-            r#"{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}"#,
-        )
-        .expect("parse review")
-        .expect("review exists");
-
-        assert_eq!(review.id, "#12");
-    }
-
-    #[test]
-    fn parse_review_empty_array_returns_none() {
-        assert_eq!(parse_github_review("[]").expect("parse review"), None);
-        assert_eq!(parse_gitlab_review("[]").expect("parse review"), None);
-    }
-
-    #[test]
-    fn parse_review_errors_on_missing_required_field() {
-        let error = parse_github_review(
-            r#"[{"number":12,"state":"OPEN","baseRefName":"main","url":"https://github.com/owner/repo/pull/12"}]"#,
-        )
-        .expect_err("missing head branch should fail");
-
-        assert!(
-            error
-                .to_string()
-                .contains("provider JSON missing required field: headRefName"),
-            "unexpected error: {error:#}"
-        );
-    }
-
-    #[test]
-    fn parse_review_preserves_unknown_state() {
-        let review = parse_github_review(
-            r#"[{"number":12,"state":"READY_FOR_REVIEW","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"#,
-        )
-        .expect("parse review")
-        .expect("review exists");
-
-        assert_eq!(
-            review.state,
-            ReviewState::Unknown("READY_FOR_REVIEW".to_owned())
-        );
-    }
 
     fn review(id: &str, title: &str, url: &str) -> ReviewRequest {
         ReviewRequest {
@@ -1382,18 +1070,5 @@ mod tests {
         assert_eq!(updated.matches("<!-- /git-stk:stack -->").count(), 1);
         assert!(updated.contains("fresh list"));
         assert!(updated.ends_with("<!-- /git-stk:stack -->"));
-    }
-
-    #[test]
-    fn parse_body_field_reads_field_and_defaults_empty() {
-        assert_eq!(
-            parse_body_field(r#"{"body":"hello"}"#, "body").expect("parse body"),
-            "hello"
-        );
-        assert_eq!(
-            parse_body_field(r#"{"description":null}"#, "description").expect("parse body"),
-            ""
-        );
-        assert_eq!(parse_body_field(r#"{}"#, "body").expect("parse body"), "");
     }
 }
