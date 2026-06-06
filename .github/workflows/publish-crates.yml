@@ -1,0 +1,27 @@
+# Publishes the crate to crates.io. Invoked by the dist-generated release.yml
+# as a custom publish job, which only runs after every release build succeeded
+# and the GitHub Release is hosted - so a broken build can never burn an
+# immutable crates.io version number.
+name: Publish to crates.io
+
+on:
+  workflow_call:
+    inputs:
+      plan:
+        required: true
+        type: string
+
+jobs:
+  publish-crates:
+    runs-on: ubuntu-22.04
+    env:
+      CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+          submodules: recursive
+      # --no-verify: the release matrix already built and validated this
+      # exact commit on five targets.
+      - name: Publish
+        run: cargo publish --no-verify

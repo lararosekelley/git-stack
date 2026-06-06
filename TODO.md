@@ -144,8 +144,11 @@
 
 ## More release automation
 
-- [ ] Can `cargo publish` happen in our release.yml action automatically at the end? (cargo-dist supports
-      `publish-jobs = ["cargo"]` + a `CARGO_REGISTRY_TOKEN` repo secret)
+- [x] Can `cargo publish` happen in our release.yml action automatically at the end? Done - dist 0.31 has
+      no built-in cargo publisher (only homebrew/npm), so it uses a custom publish job:
+      `publish-jobs = ["./publish-crates"]` invokes our reusable workflow after all release builds succeed
+      and the GitHub Release is hosted, so a broken build can never burn an immutable crates.io version.
+      Needs the `CARGO_REGISTRY_TOKEN` repo secret
 - [ ] Consider musl Linux targets instead of/alongside gnu for portability on older-glibc distros
 - [ ] Homebrew tap via cargo-dist once there are non-cargo users; Debian/WinGet/AUR only if usage justifies it
 - [ ] Verify `cargo binstall git-stk` finds release artifacts (should work for free with cargo-dist naming)
