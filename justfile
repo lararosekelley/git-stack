@@ -29,6 +29,10 @@ publish-dry-run:
 dist-plan:
     dist plan
 
+# Bump the crate version (patch|minor|major); commit and tag manually afterward
+bump part:
+    cargo run --features dev-tools --bin git-stk-bump -- {{part}}
+
 # Generate shell completions and man pages
 generate-assets:
     cargo run --features generate --bin git-stk-generate -- all target/generated
