@@ -26,11 +26,12 @@ anyhow = "1.0.100"
 axoupdater = { version = "0.10.0", default-features = false, features = ["github_releases", "blocking"] }
 clap = { version = "4.5.53", features = ["derive"] }
 clap_complete = "4.5.61"
-clap_mangen = { version = "0.2.29", optional = true }
+clap_mangen = "0.2.29"
 serde_json = "1.0.150"
 
 [features]
-generate = ["dep:clap_mangen"]
+# Gate for the asset-generation helper binary.
+generate = []
 # Development-only tooling (e.g. the version bump helper). Gated so it never
 # ships in release artifacts or the published crate.
 dev-tools = []

@@ -1,8 +1,9 @@
-use std::io::{self, BufRead, Write};
 use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use axoupdater::AxoUpdater;
+
+use crate::prompt::confirm;
 
 /// Source repository used for `--head` installs.
 const REPO_URL: &str = "https://github.com/lararosekelley/git-stk";
@@ -67,17 +68,4 @@ fn upgrade_to_latest_release(force: bool) -> Result<()> {
     }
 
     Ok(())
-}
-
-fn confirm(prompt: &str) -> Result<bool> {
-    print!("{prompt}");
-    io::stdout().flush().context("failed to flush stdout")?;
-
-    let mut answer = String::new();
-    io::stdin()
-        .lock()
-        .read_line(&mut answer)
-        .context("failed to read confirmation")?;
-
-    Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes" | "YES"))
 }
