@@ -16,6 +16,7 @@ pub mod config;
 pub mod detach;
 pub mod down;
 pub mod list;
+pub mod merge;
 pub mod new;
 pub mod parent;
 pub mod provider;

@@ -61,6 +61,15 @@ impl ReviewProvider for GitHubProvider {
     fn update_review_body(&self, review: &ReviewRequest, body: &str) -> Result<String> {
         command_output("gh", &["pr", "edit", review.id_value(), "--body", body])
     }
+
+    fn merge_review(&self, review: &ReviewRequest, strategy: &str) -> Result<String> {
+        let flag = match strategy {
+            "rebase" => "--rebase",
+            "merge" => "--merge",
+            _ => "--squash",
+        };
+        command_output("gh", &["pr", "merge", review.id_value(), flag])
+    }
 }
 
 fn parse_github_review(output: &str) -> Result<Option<ReviewRequest>> {

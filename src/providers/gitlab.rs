@@ -70,6 +70,16 @@ impl ReviewProvider for GitLabProvider {
             &["mr", "update", review.id_value(), "--description", body],
         )
     }
+
+    fn merge_review(&self, review: &ReviewRequest, strategy: &str) -> Result<String> {
+        let mut args = vec!["mr", "merge", review.id_value()];
+        match strategy {
+            "rebase" => args.push("--rebase"),
+            "merge" => {}
+            _ => args.push("--squash"),
+        }
+        command_output("glab", &args)
+    }
 }
 
 fn parse_gitlab_review(output: &str) -> Result<Option<ReviewRequest>> {

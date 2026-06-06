@@ -11,6 +11,7 @@ pub const UPDATE_REFS_KEY: &str = "stk.updateRefs";
 pub const PUSH_ON_RESTACK_KEY: &str = "stk.pushOnRestack";
 pub const PUSH_ON_SUBMIT_KEY: &str = "stk.pushOnSubmit";
 pub const SUBMIT_STACK_KEY: &str = "stk.submitStack";
+pub const MERGE_STRATEGY_KEY: &str = "stk.mergeStrategy";
 pub const DEFAULT_REMOTE: &str = "origin";
 
 /// Every `[stk]` setting the tool reads, with its default behavior. Shown by
@@ -22,11 +23,23 @@ pub const SETTINGS: &[(&str, &str)] = &[
     (PUSH_ON_RESTACK_KEY, "false"),
     (PUSH_ON_SUBMIT_KEY, "false"),
     (SUBMIT_STACK_KEY, "false"),
+    (MERGE_STRATEGY_KEY, "squash"),
 ];
 
 /// The remote used for provider detection, trunk discovery, and pushes.
 pub fn remote() -> Result<String> {
     Ok(git::config_get(REMOTE_KEY)?.unwrap_or_else(|| DEFAULT_REMOTE.to_owned()))
+}
+
+/// The merge strategy for `git stk merge`: squash, rebase, or merge.
+pub fn merge_strategy() -> Result<String> {
+    let strategy = git::config_get(MERGE_STRATEGY_KEY)?.unwrap_or_else(|| "squash".to_owned());
+    match strategy.as_str() {
+        "squash" | "rebase" | "merge" => Ok(strategy),
+        other => anyhow::bail!(
+            "unsupported stk.mergeStrategy value {other:?}; expected squash, rebase, or merge"
+        ),
+    }
 }
 
 /// A boolean setting's value, defaulting to false when unset.

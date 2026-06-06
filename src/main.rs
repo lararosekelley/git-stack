@@ -27,6 +27,7 @@ fn main() -> Result<()> {
         Command::Provider(command) => command.run(),
         Command::Review(command) => command.run(),
         Command::Sync(command) => command.run(),
+        Command::Merge(command) => command.run(),
         Command::Repair(command) => command.run(),
         Command::Submit(command) => command.run(),
         Command::Config(command) => command.run(),

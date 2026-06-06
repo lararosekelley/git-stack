@@ -302,12 +302,6 @@ fn restack_branches(
             bail!("{branch} has no stack parent");
         };
 
-        if update_refs {
-            println!("rebasing {branch} onto {parent} with --update-refs");
-        } else {
-            println!("rebasing {branch} onto {parent}");
-        }
-
         // Replay only the commits after the recorded fork point so commits
         // that landed upstream via squash or rebase merges are not repeated.
         // A base that is no longer an ancestor (stale or garbage) falls back
@@ -316,6 +310,23 @@ fn restack_branches(
             Some(base) if git::is_ancestor(&base, branch).unwrap_or(false) => Some(base),
             _ => None,
         };
+
+        // Already sitting exactly on the parent tip with a fresh fork point:
+        // skip the rebase entirely. (git rebase --update-refs would otherwise
+        // replay and rewrite identical commits with new hashes.)
+        let parent_tip = git::rev_parse(parent)?;
+        if base.as_deref() == Some(parent_tip.as_str())
+            && git::is_ancestor(parent, branch).unwrap_or(false)
+        {
+            println!("{branch} already up to date with {parent}");
+            continue;
+        }
+
+        if update_refs {
+            println!("rebasing {branch} onto {parent} with --update-refs");
+        } else {
+            println!("rebasing {branch} onto {parent}");
+        }
         let rebase_result = match &base {
             Some(base) => git::rebase_onto(parent, base, branch, update_refs),
             None => git::rebase(parent, branch, update_refs),

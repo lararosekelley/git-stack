@@ -122,6 +122,7 @@ git stk config
 git stk status [branch]
 git stk review [branch]
 git stk sync [--dry-run] [--push | --no-push]
+git stk merge [-y] [--dry-run]
 git stk repair [--dry-run]
 git stk submit [branch] [--dry-run] [--push | --no-push]
 git stk submit [--stack | --no-stack] [--dry-run] [--push | --no-push]
@@ -133,6 +134,10 @@ metadata from open reviews, cleans up merged branches (retargeting children and 
 any branch it deletes, restacks and pushes the remainder, and ends by printing the next PR to merge -
 or `stack complete` when the loop is done. After squash-merging a PR, `git stk sync` is the only command
 you need.
+
+`merge` merges the review at the bottom of the stack via the provider CLI (strategy from
+`stk.mergeStrategy`; squash by default), confirming first unless `-y` is passed, then runs the full `sync`
+flow. Landing a stack becomes one `git stk merge` per PR.
 
 `submit --stack` and `restack` operate on the whole stack containing the current branch - walk to the
 root, then every branch above it - so it never matters where in the stack you are standing. With
@@ -179,6 +184,8 @@ Everything is optional; defaults shown below:
     pushOnSubmit = true
     ; Bare `submit` submits the whole stack instead of one branch. Default: false.
     submitStack = true
+    ; Strategy for `merge`: squash, rebase, or merge. Default: squash.
+    mergeStrategy = squash
 ```
 
 The tool also manages per-branch metadata: `branch.<name>.stkParent` (the stack parent) and

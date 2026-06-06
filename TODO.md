@@ -50,6 +50,12 @@
       Slack/etc. Done: summary line ("2 PRs, base `main`, 1 open / 1 merged"), then the PRs as an ordered
       bottom-to-top (merge order) list with linked title + number and state. Works from anywhere in the
       stack via the root walk, and degrades to backticked branch names without reviews or a provider CLI
+- [ ] PR description note polish: do NOT drop merged/closed PRs from the stack overview - keep every
+      entry, with strikethrough text for merged/closed ones and an appended "(merged)" / "(closed)" after
+      the link. Replace the markdown bullets with status emojis at the left: purple circle for merged,
+      green circle for open, red circle for closed. Requires the note pass to look up review state for all
+      entries (it already has them) and pairs naturally with refreshing notes during the merge loop (item
+      above) - `merge`/`sync` would be the trigger points
 - [ ] Better github/gitlab issues support - if a branch name in the stack references an issue number, we
       could include the "Closes <issue>" comment in PR/MR description that I think works to close related
       issues
