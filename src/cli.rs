@@ -66,6 +66,12 @@ pub enum Command {
         #[arg(long, conflicts_with = "branch")]
         stack: bool,
     },
+    /// Print shell completions.
+    Completions {
+        /// Shell to print completions for.
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
     /// Upgrade git-stk to the latest release.
     Upgrade {
         /// Build and install the latest unreleased commit instead.
