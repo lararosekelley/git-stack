@@ -190,6 +190,10 @@ pub fn unset_parent_for_branch(branch: &str) -> Result<()> {
     unset_parent(branch)
 }
 
+pub fn base_for_branch(branch: &str) -> Result<Option<String>> {
+    base_of(branch)
+}
+
 pub fn set_base_for_branch(branch: &str, base: &str) -> Result<()> {
     git::config_set(&base_key(branch), base)
 }

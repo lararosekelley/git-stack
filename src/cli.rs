@@ -86,6 +86,12 @@ pub enum Command {
         #[arg(long, action = ArgAction::SetTrue)]
         dry_run: bool,
     },
+    /// Rebuild or verify local stack metadata from reviews and ancestry.
+    Repair {
+        /// Print what would change without updating local metadata.
+        #[arg(long, action = ArgAction::SetTrue)]
+        dry_run: bool,
+    },
     /// Create or update a remote review request for a branch.
     Submit {
         #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
