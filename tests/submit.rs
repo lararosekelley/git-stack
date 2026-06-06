@@ -582,3 +582,28 @@ printf '[]\n'
         .expect("check remote");
     assert!(!remote.status.success(), "dry run must not push");
 }
+
+#[test]
+fn submit_stack_covers_whole_stack_from_the_leaf() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+printf '[]\n'
+"##,
+    );
+
+    // Standing on the LEAF: position must not matter.
+    repo.stack()
+        .args(["submit", "--stack", "--dry-run"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("would create feature/a -> main"))
+        .stdout(predicates::str::contains(
+            "would create feature/b -> feature/a",
+        ));
+}

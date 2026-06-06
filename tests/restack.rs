@@ -458,3 +458,33 @@ fn restack_ignores_rebase_update_refs_git_config() {
         "rebase.updateRefs must not enable --update-refs: {stdout}"
     );
 }
+
+#[test]
+fn restack_covers_whole_stack_from_the_leaf() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+
+    repo.git(["switch", "main"]);
+    repo.commit_file("main.txt", "main\n", "main moves on");
+
+    // Standing on the LEAF: the whole stack must rebase, including
+    // feature/a below us.
+    repo.git(["switch", "feature/b"]);
+    repo.stack()
+        .arg("restack")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("rebasing feature/a onto main"))
+        .stdout(predicates::str::contains(
+            "rebasing feature/b onto feature/a",
+        ));
+
+    assert_eq!(
+        repo.git(["merge-base", "main", "feature/a"]),
+        repo.git(["rev-parse", "main"])
+    );
+}

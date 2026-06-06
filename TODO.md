@@ -77,14 +77,11 @@
 - [x] Ancestry-inference fallback for parent discovery - folded into `repair` (see above); per-command
       fallback is unnecessary now that one command rebuilds everything
 - [ ] Handle branch renames (metadata under `branch.<old>.stackParent` goes stale)
-- [ ] `submit --stack` AND `restack` should work from anywhere in the stack, like Graphite: `gt submit`
-      always includes the downstack (a PR's base needs its own PR), and `--stack` adds the upstack -
-      position never matters, so there's no `git switch` ceremony. Same root-walk fix for both commands:
-      walk `stkParent` to the root, then operate on root + descendants (the walk exists in `print_stack`).
-      The one reason NOT to submit everything: WIP upstack branches you don't want PRs for yet - solve
-      later with a `--downstack` scope (or Graphite-style bare-`submit` defaulting to downstack), and/or
-      draft PRs. The v0.4.0 merge ceremony made this concrete: restack's current-branch scoping forces one
-      `git switch` per merge round
+- [x] `submit --stack` AND `restack` should work from anywhere in the stack, like Graphite. Done via the
+      `stack_root` walk: both commands now operate on root + descendants regardless of position. The root
+      is excluded only when it is the trunk; an unanchored root still fails validation with the adopt/sync
+      hint. WIP-upstack scoping (`--downstack`) remains future work. (Bit us three times before landing:
+      the v0.4.0 merge ceremony, the one-switch loop, and a one-branch submit from the leaf)
 - [ ] One-shot merge-loop advance command - the foolproof "I just merged a PR, get me to the next one":
       check remote state, fetch trunk (`git fetch origin main:main`, no checkout needed), cleanup merged
       branches (delete + retarget), restack + push the remainder, move me to the new bottom branch, and
