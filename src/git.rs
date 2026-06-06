@@ -176,6 +176,27 @@ pub fn config_get_bool(key: &str) -> Result<Option<bool>> {
     }
 }
 
+pub fn config_get_regexp(pattern: &str) -> Result<Vec<(String, String)>> {
+    let output = Command::new("git")
+        .args(["config", "--get-regexp", pattern])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .with_context(|| format!("failed to read git config matching {pattern}"))?;
+
+    match output.status.code() {
+        Some(0) => Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| {
+                line.split_once(' ')
+                    .map(|(key, value)| (key.to_owned(), value.to_owned()))
+            })
+            .collect()),
+        Some(1) => Ok(Vec::new()),
+        _ => Err(command_error("git config --get-regexp", &output.stderr)),
+    }
+}
+
 pub fn config_set(key: &str, value: &str) -> Result<()> {
     status(&["config", key, value]).with_context(|| format!("failed to set git config {key}"))
 }

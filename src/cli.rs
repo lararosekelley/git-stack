@@ -103,6 +103,8 @@ pub enum Command {
         #[arg(long, action = ArgAction::SetTrue)]
         no_push: bool,
     },
+    /// Print all stk git config settings and branch metadata.
+    Config,
     /// Print shell completions.
     Completions {
         /// Shell to print completions for.

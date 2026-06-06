@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser};
-use git_stk::{cli, completions, providers, setup, stack, upgrade};
+use git_stk::{cli, completions, config, providers, setup, stack, upgrade};
 
 use git_stk::cli::{Cli, Command};
 
@@ -49,6 +49,7 @@ fn main() -> Result<()> {
             dry_run,
             cli::PushMode::from_flags(push, no_push),
         ),
+        Command::Config => config::print_config(),
         Command::Completions { shell } => completions::print(shell),
         Command::Setup { yes, refresh } => setup::setup(yes, refresh),
         Command::Upgrade { head, force, yes } => upgrade::upgrade(head, force, yes),

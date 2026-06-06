@@ -93,6 +93,7 @@ Provider-backed workflows:
 
 ```sh
 git stk provider
+git stk config
 git stk status [branch]
 git stk review [branch]
 git stk sync [branch] [--dry-run]
@@ -117,23 +118,45 @@ git stk upgrade --head [-y]  # build and install the latest unreleased commit
 upgrade through cargo instead. `--head` requires a Rust tool-chain, prompts before installing a pre-release build,
 and `git stk upgrade --force` returns you to the latest release afterwards.
 
-## Providers
+## Configuration
 
-Provider detection uses `stk.provider` first, then `stk.remote`, then `origin`:
+All settings live under `[stk]` in git config, so the tool's footprint stays separated from git's own.
+Everything is optional; defaults shown below:
 
-```sh
-git config stk.provider github  # or gitlab
-git config stk.remote origin
+```ini
+[stk]
+    ; Review provider: github or gitlab. Default: auto-detect from the remote URL.
+    provider = github
+    ; Remote used for provider detection and pushes. Default: origin.
+    remote = origin
+    ; Pass --update-refs to git rebase during restack. Default: false.
+    updateRefs = true
+    ; Force-push (with lease) every rebased branch after restack. Default: false.
+    pushOnRestack = true
+    ; Push branches (-u --force-with-lease) before submitting reviews. Default: false.
+    pushOnSubmit = true
 ```
 
-GitHub support shells out to `gh`. GitLab support shells out to `glab`. Authenticate those CLIs before using provider
-commands.
+The tool also manages per-branch metadata: `branch.<name>.stkParent` (the stack parent) and
+`branch.<name>.stkBase` (the recorded fork point). These are written by `new`, `adopt`, `sync`, `restack`,
+and `cleanup`; you normally never touch them by hand.
+
+Inspect everything stk reads or wrote with:
+
+```sh
+git stk config
+```
+
+## Providers
+
+Provider detection uses `stk.provider` first, then `stk.remote`, then `origin`. GitHub support shells out
+to `gh`. GitLab support shells out to `glab`. Authenticate those CLIs before using provider commands.
 
 ## Re-stacking
 
-`restack` follows Git's `rebase.updateRefs` config by default. Use `--update-refs` or `--no-update-refs` to override that
-for one run. If a rebase conflicts, `git-stk` records state in `.git/stack-state`; resolve conflicts and run
-`git stk continue`, or run `git stk abort`.
+`restack` follows the `stk.updateRefs` config (default false). Use `--update-refs` or `--no-update-refs` to
+override that for one run. If a rebase conflicts, `git-stk` records state in `.git/stack-state`; resolve
+conflicts and run `git stk continue`, or run `git stk abort`.
 
 `git-stk` records each branch's fork point in `.gitconfig` as `branch.<name>.stkBase` and rebases with
 `--onto`, so only a branch's own commits are replayed. This makes restacking safe after a parent is

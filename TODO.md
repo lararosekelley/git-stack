@@ -106,7 +106,10 @@
 - [x] If we have our own config section, it'd be `[stk]` I figure. Done as a clean break (0 users, no
       migration): `stk.provider`, `stk.remote`, `stk.pushOnRestack`, `stk.pushOnSubmit`, and per-branch
       `branch.<name>.stkParent` / `branch.<name>.stkBase`. Every tool-owned config key now greps for `stk`
-- [ ] Call out any "normal" git config settings we care about (the rebasing --update-refs may be a good example?)
+- [x] Call out any "normal" git config settings we care about - resolved by eliminating the category:
+      restack now reads `stk.updateRefs` instead of git's `rebase.updateRefs`, so the tool reads NO git-owned
+      config at all. README has a Configuration section documenting every `[stk]` setting with defaults, and
+      `git stk config` prints all settings (set or default) plus per-branch metadata
 - [ ] Document the install receipt (`~/.config/git-stk/`) and how `upgrade` uses it; `--head` leaves the receipt
       version stale by design
 
