@@ -9,11 +9,11 @@ use anyhow::{Context, Result, bail};
 use crate::cli::{PushMode, UpdateRefsMode};
 use crate::git;
 
-const PARENT_KEY: &str = "stackParent";
-const BASE_KEY: &str = "stackBase";
+const PARENT_KEY: &str = "stkParent";
+const BASE_KEY: &str = "stkBase";
 const STATE_FILE: &str = "stack-state";
-const PUSH_ON_RESTACK_KEY: &str = "stack.pushOnRestack";
-const REMOTE_KEY: &str = "stack.remote";
+const PUSH_ON_RESTACK_KEY: &str = "stk.pushOnRestack";
+const REMOTE_KEY: &str = "stk.remote";
 const DEFAULT_REMOTE: &str = "origin";
 
 pub fn create_branch(branch: &str) -> Result<()> {

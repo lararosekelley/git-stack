@@ -103,8 +103,9 @@
 
 ## Clearer docs / what needs to be cared about or is referenced in .gitconfig that the user would manage
 
-- [ ] If we have our own config section, it'd be `[stk]` I figure. NOTE: code currently uses `stack.provider` /
-      `stack.remote` and `branch.<name>.stackParent` - renaming to `stk.*` needs a migration/fallback read path
+- [x] If we have our own config section, it'd be `[stk]` I figure. Done as a clean break (0 users, no
+      migration): `stk.provider`, `stk.remote`, `stk.pushOnRestack`, `stk.pushOnSubmit`, and per-branch
+      `branch.<name>.stkParent` / `branch.<name>.stkBase`. Every tool-owned config key now greps for `stk`
 - [ ] Call out any "normal" git config settings we care about (the rebasing --update-refs may be a good example?)
 - [ ] Document the install receipt (`~/.config/git-stk/`) and how `upgrade` uses it; `--head` leaves the receipt
       version stale by design

@@ -5,7 +5,7 @@
 ---
 
 `git-stk` keeps stacks as ordinary Git branches. Stack parent metadata is stored locally in `.git/config` as
-`branch.<name>.stackParent`, and GitHub PR bases or GitLab MR target branches can be used to reconstruct that metadata.
+`branch.<name>.stkParent`, and GitHub PR bases or GitLab MR target branches can be used to reconstruct that metadata.
 
 ## Status
 
@@ -101,7 +101,7 @@ git stk submit --stack [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--delete-branch]
 ```
 
-`submit --push` (or `git config stack.pushOnSubmit true`) pushes the submitted branches with
+`submit --push` (or `git config stk.pushOnSubmit true`) pushes the submitted branches with
 `-u --force-with-lease` before creating or updating reviews, so new branches exist remotely and rebased
 ones are updated safely.
 
@@ -119,11 +119,11 @@ and `git stk upgrade --force` returns you to the latest release afterwards.
 
 ## Providers
 
-Provider detection uses `stack.provider` first, then `stack.remote`, then `origin`:
+Provider detection uses `stk.provider` first, then `stk.remote`, then `origin`:
 
 ```sh
-git config stack.provider github  # or gitlab
-git config stack.remote origin
+git config stk.provider github  # or gitlab
+git config stk.remote origin
 ```
 
 GitHub support shells out to `gh`. GitLab support shells out to `glab`. Authenticate those CLIs before using provider
@@ -135,14 +135,14 @@ commands.
 for one run. If a rebase conflicts, `git-stk` records state in `.git/stack-state`; resolve conflicts and run
 `git stk continue`, or run `git stk abort`.
 
-`git-stk` records each branch's fork point in `.gitconfig` as `branch.<name>.stackBase` and rebases with
+`git-stk` records each branch's fork point in `.gitconfig` as `branch.<name>.stkBase` and rebases with
 `--onto`, so only a branch's own commits are replayed. This makes restacking safe after a parent is
 squash-merged, rebase-merged, or amended. A missing or stale fork point falls back to a plain rebase.
 
 After a restack, every rebased branch's remote counterpart is stale. Pass `--push` (or set
-`git config stack.pushOnRestack true`) to force-push (with lease) all rebased branches automatically,
+`git config stk.pushOnRestack true`) to force-push (with lease) all rebased branches automatically,
 including after a conflicted restack finishes via `git stk continue`. Without it, `restack` prints the
-exact push command instead. `--no-push` overrides the config for one run; `stack.remote` picks the remote
+exact push command instead. `--no-push` overrides the config for one run; `stk.remote` picks the remote
 (default `origin`).
 
 ## Generated Assets

@@ -63,7 +63,7 @@ pub enum Command {
         /// Force-push (with lease) every rebased branch afterwards.
         #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_push")]
         push: bool,
-        /// Do not push rebased branches, overriding stack.pushOnRestack.
+        /// Do not push rebased branches, overriding stk.pushOnRestack.
         #[arg(long, action = ArgAction::SetTrue)]
         no_push: bool,
     },
@@ -99,7 +99,7 @@ pub enum Command {
         /// Push branches (-u --force-with-lease) before submitting.
         #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_push")]
         push: bool,
-        /// Do not push branches, overriding stack.pushOnSubmit.
+        /// Do not push branches, overriding stk.pushOnSubmit.
         #[arg(long, action = ArgAction::SetTrue)]
         no_push: bool,
     },

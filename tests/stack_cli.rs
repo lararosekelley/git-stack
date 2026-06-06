@@ -114,7 +114,7 @@ fn new_records_parent_and_supports_navigation() {
 
     assert_eq!(repo.git(["branch", "--show-current"]), "feature/a");
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/a.stackParent"]),
+        repo.git(["config", "--get", "branch.feature/a.stkParent"]),
         "main"
     );
 
@@ -397,7 +397,7 @@ fn continue_resumes_restack_after_conflict_resolution() {
 
     // continue must refresh the recorded fork point to the new parent tip
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stackBase"]),
+        repo.git(["config", "--get", "branch.feature/b.stkBase"]),
         parent_head
     );
 }
@@ -479,7 +479,7 @@ fn provider_config_override_wins() {
         "origin",
         "https://github.com/lararosekelley/git-stk.git",
     ]);
-    repo.git(["config", "stack.provider", "gitlab"]);
+    repo.git(["config", "stk.provider", "gitlab"]);
 
     repo.stack()
         .arg("provider")
@@ -491,26 +491,24 @@ fn provider_config_override_wins() {
 #[test]
 fn provider_rejects_invalid_config() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "bitbucket"]);
+    repo.git(["config", "stk.provider", "bitbucket"]);
 
     repo.stack()
         .arg("provider")
         .assert()
         .failure()
-        .stderr(predicates::str::contains(
-            "unsupported stack.provider value",
-        ));
+        .stderr(predicates::str::contains("unsupported stk.provider value"));
 }
 
 #[test]
 fn status_prints_local_stack_and_review_state() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/a"]);
     repo.git(["switch", "-c", "feature/b"]);
-    repo.git(["config", "branch.feature/b.stackParent", "feature/a"]);
+    repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
     repo.git(["switch", "-c", "feature/c"]);
-    repo.git(["config", "branch.feature/c.stackParent", "feature/b"]);
+    repo.git(["config", "branch.feature/c.stkParent", "feature/b"]);
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
@@ -540,8 +538,8 @@ JSON
 #[test]
 fn status_prints_none_when_review_is_missing() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
-    repo.git(["config", "branch.feature/b.stackParent", "feature/a"]);
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
@@ -563,8 +561,8 @@ printf '[]\n'
 #[test]
 fn status_warns_when_review_base_differs_from_parent() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "gitlab"]);
-    repo.git(["config", "branch.feature/b.stackParent", "feature/a"]);
+    repo.git(["config", "stk.provider", "gitlab"]);
+    repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
     let path = repo.fake_cli(
         "glab",
         r##"#!/usr/bin/env sh
@@ -619,7 +617,7 @@ JSON
 #[test]
 fn review_reads_gitlab_mr_for_explicit_branch() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "gitlab"]);
+    repo.git(["config", "stk.provider", "gitlab"]);
     let path = repo.fake_cli(
         "glab",
         r##"#!/usr/bin/env sh
@@ -640,7 +638,7 @@ JSON
 #[test]
 fn review_reports_when_no_review_exists() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
@@ -663,7 +661,7 @@ JSON
 #[test]
 fn sync_sets_parent_from_github_pr_base() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/b"]);
     let path = repo.fake_cli(
         "gh",
@@ -684,7 +682,7 @@ JSON
         ));
 
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stackParent"]),
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
         "feature/a"
     );
 }
@@ -692,7 +690,7 @@ JSON
 #[test]
 fn sync_dry_run_reports_parent_without_writing_config() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/b"]);
     let path = repo.fake_cli(
         "gh",
@@ -716,7 +714,7 @@ JSON
         ));
 
     assert_eq!(
-        repo.git_status(["config", "--get", "branch.feature/b.stackParent"])
+        repo.git_status(["config", "--get", "branch.feature/b.stkParent"])
             .status
             .code(),
         Some(1)
@@ -726,7 +724,7 @@ JSON
 #[test]
 fn sync_sets_parent_from_gitlab_mr_target() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "gitlab"]);
+    repo.git(["config", "stk.provider", "gitlab"]);
     let path = repo.fake_cli(
         "glab",
         r##"#!/usr/bin/env sh
@@ -746,7 +744,7 @@ JSON
         ));
 
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stackParent"]),
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
         "feature/a"
     );
 }
@@ -754,7 +752,7 @@ JSON
 #[test]
 fn sync_all_local_branches_skips_branches_without_reviews() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/a"]);
     repo.git(["switch", "main"]);
     repo.git(["switch", "-c", "feature/b"]);
@@ -786,7 +784,7 @@ esac
         .stdout(predicates::str::contains("sync complete: 1 synced"));
 
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stackParent"]),
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
         "feature/a"
     );
 }
@@ -794,9 +792,9 @@ esac
 #[test]
 fn submit_creates_github_pr_when_none_exists() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/b"]);
-    repo.git(["config", "branch.feature/b.stackParent", "feature/a"]);
+    repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
@@ -832,9 +830,9 @@ esac
 #[test]
 fn submit_dry_run_reports_create_without_calling_create() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/b"]);
-    repo.git(["config", "branch.feature/b.stackParent", "feature/a"]);
+    repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
@@ -861,8 +859,8 @@ esac
 #[test]
 fn submit_noops_when_github_pr_already_targets_parent() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
-    repo.git(["config", "branch.feature/b.stackParent", "feature/a"]);
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
@@ -891,8 +889,8 @@ esac
 #[test]
 fn submit_updates_gitlab_mr_target_when_parent_changed() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "gitlab"]);
-    repo.git(["config", "branch.feature/b.stackParent", "main"]);
+    repo.git(["config", "stk.provider", "gitlab"]);
+    repo.git(["config", "branch.feature/b.stkParent", "main"]);
     let path = repo.fake_cli(
         "glab",
         r##"#!/usr/bin/env sh
@@ -928,8 +926,8 @@ esac
 #[test]
 fn submit_dry_run_reports_update_without_calling_update() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "gitlab"]);
-    repo.git(["config", "branch.feature/b.stackParent", "main"]);
+    repo.git(["config", "stk.provider", "gitlab"]);
+    repo.git(["config", "branch.feature/b.stkParent", "main"]);
     let path = repo.fake_cli(
         "glab",
         r##"#!/usr/bin/env sh
@@ -958,7 +956,7 @@ esac
 #[test]
 fn submit_requires_stack_parent() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
 
     repo.stack()
         .args(["submit", "feature/b"])
@@ -970,7 +968,7 @@ fn submit_requires_stack_parent() {
 #[test]
 fn submit_stack_creates_reviews_parent_first() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
 
@@ -1022,10 +1020,10 @@ esac
 #[test]
 fn submit_stack_validates_parents_before_provider_calls() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/a"]);
     repo.git(["switch", "-c", "feature/b"]);
-    repo.git(["config", "branch.feature/b.stackParent", "feature/a"]);
+    repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
     repo.git(["switch", "feature/a"]);
     let log_path = repo.path().join("submit.log");
     let path = repo.fake_cli(
@@ -1055,7 +1053,7 @@ printf '[]\n'
 #[test]
 fn cleanup_retargets_children_and_detaches_merged_branch() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
     let path = repo.fake_cli(
@@ -1104,11 +1102,11 @@ esac
         ));
 
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stackParent"]),
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
         "main"
     );
     assert_eq!(
-        repo.git_status(["config", "--get", "branch.feature/a.stackParent"])
+        repo.git_status(["config", "--get", "branch.feature/a.stkParent"])
             .status
             .code(),
         Some(1)
@@ -1118,7 +1116,7 @@ esac
 #[test]
 fn cleanup_dry_run_leaves_stack_metadata_unchanged() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
     let path = repo.fake_cli(
@@ -1163,11 +1161,11 @@ esac
         .stdout(predicates::str::contains("would detach feature/a"));
 
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/a.stackParent"]),
+        repo.git(["config", "--get", "branch.feature/a.stkParent"]),
         "main"
     );
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stackParent"]),
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
         "feature/a"
     );
 }
@@ -1175,7 +1173,7 @@ esac
 #[test]
 fn cleanup_delete_branch_removes_cleaned_merged_branch() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     // Real commits + a squash merge: feature/a's commits are NOT
     // ancestry-merged into main afterwards, so `git branch -d` would refuse.
@@ -1229,7 +1227,7 @@ esac
             .contains("feature/a")
     );
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stackParent"]),
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
         "main"
     );
 }
@@ -1237,7 +1235,7 @@ esac
 #[test]
 fn cleanup_delete_branch_dry_run_keeps_branch() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.git(["switch", "main"]);
     let path = repo.fake_cli(
@@ -1268,7 +1266,7 @@ esac
             .contains("feature/a")
     );
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/a.stackParent"]),
+        repo.git(["config", "--get", "branch.feature/a.stkParent"]),
         "main"
     );
 }
@@ -1276,7 +1274,7 @@ esac
 #[test]
 fn cleanup_delete_branch_refuses_current_branch() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     let path = repo.fake_cli(
         "gh",
@@ -1691,7 +1689,7 @@ exit 1
 #[test]
 fn restack_after_squash_merge_replays_only_child_commits() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
 
     // Parent stack: two commits on feature/a so git's patch-id auto-skip
     // cannot save a naive rebase after the squash merge.
@@ -1744,11 +1742,11 @@ esac
         .success();
 
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stackParent"]),
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
         "main"
     );
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/b.stackBase"]),
+        repo.git(["config", "--get", "branch.feature/b.stkBase"]),
         old_parent_tip
     );
 
@@ -1775,7 +1773,7 @@ fn new_and_restack_record_stack_base() {
     let main_tip = repo.git(["rev-parse", "main"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/a.stackBase"]),
+        repo.git(["config", "--get", "branch.feature/a.stkBase"]),
         main_tip
     );
 
@@ -1788,7 +1786,7 @@ fn new_and_restack_record_stack_base() {
 
     let new_main_tip = repo.git(["rev-parse", "main"]);
     assert_eq!(
-        repo.git(["config", "--get", "branch.feature/a.stackBase"]),
+        repo.git(["config", "--get", "branch.feature/a.stkBase"]),
         new_main_tip
     );
 }
@@ -1801,7 +1799,7 @@ fn restack_falls_back_to_plain_rebase_when_base_is_invalid() {
     repo.commit_file("a.txt", "a\n", "feature work");
     repo.git([
         "config",
-        "branch.feature/a.stackBase",
+        "branch.feature/a.stkBase",
         "0000000000000000000000000000000000000000",
     ]);
 
@@ -1827,7 +1825,7 @@ fn detach_clears_stack_base() {
     repo.stack().args(["detach"]).assert().success();
 
     assert_eq!(
-        repo.git_status(["config", "--get", "branch.feature/a.stackBase"])
+        repo.git_status(["config", "--get", "branch.feature/a.stkBase"])
             .status
             .code(),
         Some(1)
@@ -1837,7 +1835,7 @@ fn detach_clears_stack_base() {
 #[test]
 fn submit_stack_notes_dependency_in_child_review_body() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
     let path = repo.fake_cli(
@@ -1885,7 +1883,7 @@ esac
 #[test]
 fn submit_stack_skips_note_when_already_present() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
     let path = repo.fake_cli(
@@ -1927,7 +1925,7 @@ esac
 #[test]
 fn submit_stack_notes_dependency_in_gitlab_description() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "gitlab"]);
+    repo.git(["config", "stk.provider", "gitlab"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
     let path = repo.fake_cli(
@@ -2070,7 +2068,7 @@ fn restack_prints_push_hint_when_not_pushing() {
 #[test]
 fn restack_push_respects_config_and_no_push_overrides_it() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.pushOnRestack", "true"]);
+    repo.git(["config", "stk.pushOnRestack", "true"]);
 
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "a\n", "parent change");
@@ -2241,7 +2239,7 @@ fn completions_complete_branch_names_with_prefix() {
 #[test]
 fn submit_stack_push_pushes_branches_before_provider_calls() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "a\n", "parent change");
     repo.stack().args(["new", "feature/b"]).assert().success();
@@ -2303,8 +2301,8 @@ esac
 #[test]
 fn submit_push_respects_config_and_no_push_overrides_it() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
-    repo.git(["config", "stack.pushOnSubmit", "true"]);
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["config", "stk.pushOnSubmit", "true"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "a\n", "parent change");
 
@@ -2345,7 +2343,7 @@ esac
 #[test]
 fn submit_push_dry_run_does_not_push() {
     let repo = TestRepo::new();
-    repo.git(["config", "stack.provider", "github"]);
+    repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "a\n", "parent change");
 
