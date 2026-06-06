@@ -41,8 +41,11 @@ pub fn create_branch(branch: &str) -> Result<()> {
     status(&["switch", "-c", branch]).with_context(|| format!("failed to create branch {branch}"))
 }
 
+/// Force-delete a branch. Callers are expected to have verified the branch
+/// landed through review state: after a squash merge its commits are not
+/// ancestry-merged, so `git branch -d` can refuse even though the work is in.
 pub fn delete_branch(branch: &str) -> Result<()> {
-    status(&["branch", "-d", branch]).with_context(|| format!("failed to delete branch {branch}"))
+    status(&["branch", "-D", branch]).with_context(|| format!("failed to delete branch {branch}"))
 }
 
 pub fn rebase(parent: &str, branch: &str, update_refs: bool) -> Result<()> {

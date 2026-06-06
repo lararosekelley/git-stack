@@ -24,12 +24,10 @@
       `completions::print` (rewrite `git__subcmd__stk` -> `git__stk`) with a harness test asserting
       `submit --<TAB>` yields `--dry-run --stack`, (3) report upstream either way - this affects every
       `git-*` subcommand binary
-- [ ] `git stk bump` next-step instructions don't work as printed: `git tag vX.Y.Z` creates a LIGHTWEIGHT
+- [x] `git stk bump` next-step instructions don't work as printed: `git tag vX.Y.Z` creates a LIGHTWEIGHT
       tag, and `git push --follow-tags` only pushes ANNOTATED tags (confirmed: `git cat-file -t v0.3.0` ->
-      `commit`, not `tag`). Fix the printed steps to `git tag -a vX.Y.Z -m vX.Y.Z` (annotated also carries
-      tagger/date, which release tooling prefers) or `git push origin vX.Y.Z`
-- [ ] `git-stk --version` errors - clap's version flag was never enabled. Add `#[command(version)]` to the
-      Cli struct (one attribute; completions/man page pick it up automatically)
+      `commit`, not `tag`). Fixed: printed steps now use `git tag -a vX.Y.Z -m vX.Y.Z`
+- [x] `git-stk --version` errors - clap's version flag was never enabled. Fixed with `#[command(version)]`
 
 ## Handle more cases / types of merges
 
@@ -74,6 +72,7 @@
 - [ ] Ancestry-inference fallback for parent discovery (priority chain from the original design:
       local config -> PR base -> commit ancestry -> ask the user; only the first two exist today)
 - [ ] Handle branch renames (metadata under `branch.<old>.stackParent` goes stale)
+- [ ] `git stk guide` command to provide an example to try the tool out?
 
 ## More git automation
 
@@ -85,10 +84,10 @@
       `git push --force-with-lease` afterwards only pushes the CURRENT branch (which restack leaves at the
       top) - stale PR diffs for everything in between. The tool knows exactly which branches it just
       rewrote; it should push them (or at least print the exact push command for all of them)
-- [ ] `cleanup --delete-branch` uses `git branch -d`, which can REFUSE after a squash merge (commits are not
-      ancestry-merged; it only worked for us because the branch matched its un-pruned upstream). Since we
-      have provider-verified merge state at that point, use `-D` - that is strictly better information than
-      git's ancestry heuristic
+- [x] `cleanup --delete-branch` uses `git branch -d`, which can REFUSE after a squash merge (commits are not
+      ancestry-merged; it only worked for us because the branch matched its un-pruned upstream). Fixed: uses
+      `-D` now, justified by provider-verified merge state - strictly better information than git's ancestry
+      heuristic. Regression test does a real squash merge and proves `-d` would refuse
 - [ ] Should `--delete-branch` be the default (with `--keep-branch` to opt out)? Cases for keeping: wanting
       to inspect the old commits post-squash, reusing the branch name, or distrust while the tool is young.
       Revisit once `-D` semantics above are in

@@ -64,11 +64,19 @@ fn refresh_lockfile() -> Result<()> {
 
 fn print_next_steps(version: &str) {
     println!();
-    println!("Next steps (run manually):");
-    println!("  git add Cargo.toml Cargo.lock");
-    println!("  git commit -m \"chore(release): bump version to {version}\"");
-    println!("  git tag v{version}");
-    println!("  git push --follow-tags");
+    print!("{}", next_steps(version));
+}
+
+/// The tag must be annotated (`-a`): `git push --follow-tags` only pushes
+/// annotated tags, so a lightweight tag would silently stay local.
+fn next_steps(version: &str) -> String {
+    format!(
+        "Next steps (run manually):\n  \
+         git add Cargo.toml Cargo.lock\n  \
+         git commit -m \"chore(release): bump version to {version}\"\n  \
+         git tag -a v{version} -m \"v{version}\"\n  \
+         git push --follow-tags\n"
+    )
 }
 
 /// Extract the `version` field from the `[package]` table.
@@ -175,5 +183,14 @@ clap = { version = "4.5.53", features = ["derive"] }
         assert_eq!(bump_version("1.2.3", "major").unwrap(), "2.0.0");
         assert_eq!(bump_version("1.2.3", "minor").unwrap(), "1.3.0");
         assert_eq!(bump_version("1.2.3", "patch").unwrap(), "1.2.4");
+    }
+
+    #[test]
+    fn next_steps_use_an_annotated_tag() {
+        let steps = super::next_steps("0.3.1");
+        // --follow-tags only pushes annotated tags; a plain `git tag` would
+        // silently leave the tag local.
+        assert!(steps.contains("git tag -a v0.3.1 -m \"v0.3.1\""));
+        assert!(steps.contains("git push --follow-tags"));
     }
 }
