@@ -1,11 +1,11 @@
 pub mod cli;
 pub mod commands;
 pub mod completions;
-pub mod config;
 pub mod git;
 pub mod notes;
 pub mod prompt;
 pub mod providers;
+pub mod settings;
 pub mod setup;
 pub mod stack;
 pub mod upgrade;

@@ -3,6 +3,7 @@ use std::{fmt, process::Command};
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::git;
+use crate::settings;
 
 mod github;
 mod gitlab;
@@ -10,10 +11,6 @@ mod json;
 
 use github::GitHubProvider;
 use gitlab::GitLabProvider;
-
-const PROVIDER_KEY: &str = "stk.provider";
-const REMOTE_KEY: &str = "stk.remote";
-const DEFAULT_REMOTE: &str = "origin";
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ProviderKind {
@@ -92,7 +89,7 @@ pub trait ReviewProvider {
 }
 
 pub fn detect_provider() -> Result<DetectedProvider> {
-    if let Some(value) = git::config_get(PROVIDER_KEY)? {
+    if let Some(value) = git::config_get(settings::PROVIDER_KEY)? {
         let Some(kind) = ProviderKind::parse(&value) else {
             bail!("unsupported stk.provider value {value:?}; expected github or gitlab");
         };
@@ -103,7 +100,7 @@ pub fn detect_provider() -> Result<DetectedProvider> {
         });
     }
 
-    let remote = git::config_get(REMOTE_KEY)?.unwrap_or_else(|| DEFAULT_REMOTE.to_owned());
+    let remote = settings::remote()?;
     let Some(url) = git::remote_url(&remote)? else {
         bail!("could not detect provider: remote {remote:?} does not exist");
     };

@@ -4,14 +4,10 @@ use clap_complete::engine::ArgValueCompleter;
 
 use crate::cli::PushMode;
 use crate::commands::Run;
-use crate::providers::{ReviewProvider, detect_provider, review_provider};
-use crate::{git, stack};
-
-// TODO(PR 4): centralize config keys.
-const PUSH_ON_SUBMIT_KEY: &str = "stk.pushOnSubmit";
-const REMOTE_KEY: &str = "stk.remote";
-const DEFAULT_REMOTE: &str = "origin";
 use crate::completions;
+use crate::providers::{ReviewProvider, detect_provider, review_provider};
+use crate::settings;
+use crate::{git, stack};
 
 /// Create or update a remote review request for a branch.
 #[derive(Debug, clap::Args)]
@@ -64,13 +60,9 @@ pub fn submit(
     // Push after stack validation but before any provider calls: creating a
     // review requires the branch to exist remotely, and -u --force-with-lease
     // covers both first pushes and safely updating rebased branches.
-    let push = match push_mode {
-        crate::cli::PushMode::Config => git::config_get_bool(PUSH_ON_SUBMIT_KEY)?.unwrap_or(false),
-        crate::cli::PushMode::Enabled => true,
-        crate::cli::PushMode::Disabled => false,
-    };
+    let push = settings::push_enabled(push_mode, settings::PUSH_ON_SUBMIT_KEY)?;
     if push {
-        let remote = git::config_get(REMOTE_KEY)?.unwrap_or_else(|| DEFAULT_REMOTE.to_owned());
+        let remote = settings::remote()?;
         if dry_run {
             println!("would push {} to {remote}", branches.join(" "));
         } else {
