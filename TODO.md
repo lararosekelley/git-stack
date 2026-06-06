@@ -35,9 +35,11 @@
 
 ## More helpful PR management tools
 
-- [ ] Graphite is really nice in how it comments on PRs directly to show the stack and where this PR sits in it -
-      we should do that with either a comment that we can edit when stack is re-submitted/otherwise updated, or
-      managing the end of the PR description
+- [x] Graphite is really nice in how it comments on PRs directly to show the stack and where this PR sits in it.
+      Done via the PR description: `submit --stack` maintains a marker-delimited section at the end of every
+      body with the full stack as linked bullets (title + number), leaf-first, a pointing emoji on the PR
+      being viewed, the trunk in backticks at the bottom, and a "Stack managed by git-stk" footer link. The
+      markup self-repairs if a user hand-edits or deletes the markers
 - [x] Simpler version first: "Depends on #123" style links in PR bodies on `submit --stack` - maintained in a
       marker-delimited section (`<!-- git-stk:stack -->`) so resubmits update in place; the full Graphite-style
       stack visualization above can reuse those markers later
@@ -45,6 +47,9 @@
       Slack/etc. Brief summary at top (e.g. "5 PRs, base main, 3 open / 2 merged"), then an ordered
       bottom-to-top list of PRs/MRs with title, link, and state per entry. Needs provider review lookups,
       so it should degrade gracefully (plain branch names) when no reviews exist or `gh`/`glab` is missing
+- [ ] Better github/gitlab issues support - if a branch name in the stack references an issue number, we
+      could include the "Closes <issue>" comment in PR/MR description that I think works to close related
+      issues
 
 ## Stack ergonomics
 
