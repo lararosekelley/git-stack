@@ -13,6 +13,7 @@ const PARENT_KEY: &str = "stkParent";
 const BASE_KEY: &str = "stkBase";
 const STATE_FILE: &str = "stack-state";
 const PUSH_ON_RESTACK_KEY: &str = "stk.pushOnRestack";
+const UPDATE_REFS_KEY: &str = "stk.updateRefs";
 const REMOTE_KEY: &str = "stk.remote";
 const DEFAULT_REMOTE: &str = "origin";
 
@@ -334,9 +335,9 @@ fn resolve_push(mode: PushMode) -> Result<bool> {
 fn resolve_update_refs(mode: UpdateRefsMode) -> Result<bool> {
     match mode {
         UpdateRefsMode::Config => {
-            let configured = git::config_get_bool("rebase.updateRefs")?.unwrap_or(false);
+            let configured = git::config_get_bool(UPDATE_REFS_KEY)?.unwrap_or(false);
             if configured && !git::supports_rebase_update_refs()? {
-                eprintln!("rebase.updateRefs is true, but this Git does not support --update-refs");
+                eprintln!("stk.updateRefs is true, but this Git does not support --update-refs");
                 return Ok(false);
             }
             Ok(configured)

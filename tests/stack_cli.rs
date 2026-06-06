@@ -28,8 +28,18 @@ impl TestRepo {
         fs::write(self.path().join(path), contents).expect("write test file");
     }
 
+    /// Isolate a command from the developer's global and system git config so
+    /// the suite stays hermetic (e.g. a global stk.pushOnSubmit=true must not
+    /// change test behavior).
+    fn isolate_git_config(command: &mut Command) {
+        command.env("GIT_CONFIG_GLOBAL", "/dev/null");
+        command.env("GIT_CONFIG_NOSYSTEM", "1");
+    }
+
     fn git<const N: usize>(&self, args: [&str; N]) -> String {
-        let output = Command::new("git")
+        let mut command = Command::new("git");
+        Self::isolate_git_config(&mut command);
+        let output = command
             .args(args)
             .current_dir(self.path())
             .output()
@@ -46,7 +56,9 @@ impl TestRepo {
     }
 
     fn git_status<const N: usize>(&self, args: [&str; N]) -> std::process::Output {
-        Command::new("git")
+        let mut command = Command::new("git");
+        Self::isolate_git_config(&mut command);
+        command
             .args(args)
             .current_dir(self.path())
             .output()
@@ -78,6 +90,8 @@ impl TestRepo {
         let mut command = assert_cmd::Command::cargo_bin("git-stk").expect("git-stk binary");
         command.current_dir(self.path());
         command.env("GIT_EDITOR", "true");
+        command.env("GIT_CONFIG_GLOBAL", "/dev/null");
+        command.env("GIT_CONFIG_NOSYSTEM", "1");
         command
     }
 
@@ -241,7 +255,7 @@ fn restack_uses_update_refs_when_git_config_enables_it() {
     if !repo.supports_update_refs() {
         return;
     }
-    repo.git(["config", "rebase.updateRefs", "true"]);
+    repo.git(["config", "stk.updateRefs", "true"]);
 
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "parent change\n", "add parent change");
@@ -265,7 +279,7 @@ fn restack_can_force_update_refs() {
     if !repo.supports_update_refs() {
         return;
     }
-    repo.git(["config", "rebase.updateRefs", "false"]);
+    repo.git(["config", "stk.updateRefs", "false"]);
 
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "parent change\n", "add parent change");
@@ -286,7 +300,7 @@ fn restack_can_force_update_refs() {
 #[test]
 fn restack_can_opt_out_of_update_refs() {
     let repo = TestRepo::new();
-    repo.git(["config", "rebase.updateRefs", "true"]);
+    repo.git(["config", "stk.updateRefs", "true"]);
 
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "parent change\n", "add parent change");
@@ -2165,7 +2179,9 @@ printf '%s\n' "${{COMPREPLY[@]}}"
             words.len() + 1,
         );
 
-        let result = Command::new("bash")
+        let mut command = Command::new("bash");
+        Self::isolate_git_config(&mut command);
+        let result = command
             .args(["-c", &harness])
             .current_dir(self.path())
             .output()
@@ -2368,4 +2384,60 @@ printf '[]\n'
         .output()
         .expect("check remote");
     assert!(!remote.status.success(), "dry run must not push");
+}
+
+#[test]
+fn config_shows_defaults_and_branch_metadata() {
+    let repo = TestRepo::new();
+
+    repo.stack()
+        .arg("config")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "stk.provider (default: auto-detect from the remote URL)",
+        ))
+        .stdout(predicates::str::contains("stk.remote (default: origin)"))
+        .stdout(predicates::str::contains("stk.updateRefs (default: false)"))
+        .stdout(predicates::str::contains(
+            "no branch metadata (no stacked branches)",
+        ));
+
+    repo.git(["config", "stk.pushOnRestack", "true"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+
+    repo.stack()
+        .arg("config")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("stk.pushOnRestack = true"))
+        .stdout(predicates::str::contains(
+            "branch.feature/a.stkparent = main",
+        ))
+        .stdout(predicates::str::contains("branch.feature/a.stkbase = "));
+}
+
+#[test]
+fn restack_ignores_rebase_update_refs_git_config() {
+    let repo = TestRepo::new();
+    if !repo.supports_update_refs() {
+        return;
+    }
+    // Git's own config must no longer influence restack; only stk.updateRefs.
+    repo.git(["config", "rebase.updateRefs", "true"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "parent change");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "child change");
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a2.txt", "a2\n", "parent moves");
+
+    let output = repo.stack_output(["restack"]);
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        !stdout.contains("--update-refs"),
+        "rebase.updateRefs must not enable --update-refs: {stdout}"
+    );
 }
