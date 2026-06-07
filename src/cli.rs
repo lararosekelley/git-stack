@@ -39,6 +39,7 @@ pub enum Command {
     Submit(commands::submit::Submit),
     Config(commands::config::Config),
     Completions(commands::completions::Completions),
+    Guide(commands::guide::Guide),
     Setup(commands::setup::Setup),
     Upgrade(commands::upgrade::Upgrade),
     Cleanup(commands::cleanup::Cleanup),

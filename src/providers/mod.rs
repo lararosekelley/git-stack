@@ -5,10 +5,12 @@ use anyhow::{Context, Result, anyhow, bail};
 use crate::git;
 use crate::settings;
 
+mod demo;
 mod github;
 mod gitlab;
 mod json;
 
+use demo::DemoProvider;
 use github::GitHubProvider;
 use gitlab::GitLabProvider;
 
@@ -16,6 +18,9 @@ use gitlab::GitLabProvider;
 pub enum ProviderKind {
     GitHub,
     GitLab,
+    /// Offline stand-in: reviews in `.git`, merges as local squashes. Only
+    /// ever selected explicitly via `stk.provider = demo`.
+    Demo,
 }
 
 impl ProviderKind {
@@ -23,6 +28,7 @@ impl ProviderKind {
         match value.to_ascii_lowercase().as_str() {
             "github" | "gh" => Some(Self::GitHub),
             "gitlab" | "glab" => Some(Self::GitLab),
+            "demo" => Some(Self::Demo),
             _ => None,
         }
     }
@@ -33,6 +39,7 @@ impl fmt::Display for ProviderKind {
         match self {
             Self::GitHub => write!(formatter, "github"),
             Self::GitLab => write!(formatter, "gitlab"),
+            Self::Demo => write!(formatter, "demo"),
         }
     }
 }
@@ -142,6 +149,7 @@ pub(crate) fn review_provider(kind: ProviderKind) -> Box<dyn ReviewProvider> {
     match kind {
         ProviderKind::GitHub => Box::new(GitHubProvider),
         ProviderKind::GitLab => Box::new(GitLabProvider),
+        ProviderKind::Demo => Box::new(DemoProvider),
     }
 }
 

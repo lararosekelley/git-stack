@@ -16,6 +16,7 @@ pub mod completions;
 pub mod config;
 pub mod detach;
 pub mod down;
+pub mod guide;
 pub mod list;
 pub mod merge;
 pub mod new;

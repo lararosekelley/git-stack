@@ -51,6 +51,7 @@ fn main() -> Result<()> {
         Command::Submit(command) => command.run(),
         Command::Config(command) => command.run(),
         Command::Completions(command) => command.run(),
+        Command::Guide(command) => command.run(),
         Command::Setup(command) => command.run(),
         Command::Upgrade(command) => command.run(),
         Command::Cleanup(command) => command.run(),

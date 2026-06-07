@@ -37,6 +37,12 @@ Then install the man page and wire up shell completions (idempotent; prompts bef
 git stk setup
 ```
 
+New to stacking? `git stk guide` offers short interactive tours in a disposable sandbox repository:
+`intro` (the whole loop - create a stack, submit, restack, land it), `conflicts` (resolve and continue an
+interrupted restack), and `repair` (rebuild lost stack metadata). A built-in demo provider stands in for
+GitHub, so nothing real is touched and no network is needed; `git config stk.provider demo` works in any
+scratch repo for the same offline playground.
+
 Upgrade an installer-managed copy with:
 
 ```sh
@@ -214,7 +220,8 @@ Everything is optional; defaults shown below:
 
 ```ini
 [stk]
-    ; Review provider: github or gitlab. Default: auto-detect from the remote URL.
+    ; Review provider: github, gitlab, or demo (offline playground).
+    ; Default: auto-detect from the remote URL.
     provider = github
     ; Remote used for provider detection and pushes. Default: origin.
     remote = origin
