@@ -221,6 +221,25 @@ fn detach_clears_stack_base() {
 }
 
 #[test]
+fn list_hints_restack_when_a_branch_is_behind() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a.txt", "a\nmore\n", "a moves on");
+
+    repo.stack()
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "hint: feature/b is 1 commit behind feature/a - run `git stk restack`",
+        ));
+}
+
+#[test]
 fn list_prints_leaf_first_without_trunk_label_for_fragments() {
     let repo = TestRepo::new();
 
