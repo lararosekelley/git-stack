@@ -124,6 +124,47 @@ esac
 }
 
 #[test]
+fn cleanup_skips_closed_reviews_with_their_state() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.git(["switch", "main"]);
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *--state\ closed*)
+    cat <<'JSON'
+[{"number":12,"state":"CLOSED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["cleanup", "feature/a"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "skipped feature/a: review #12 is closed",
+        ))
+        .stdout(predicates::str::contains(
+            "cleanup complete: 0 cleaned, 1 skipped",
+        ));
+
+    // Closed work is not in the trunk; the branch must survive.
+    assert!(
+        repo.git(["branch", "--list", "feature/a"])
+            .contains("feature/a")
+    );
+}
+
+#[test]
 fn cleanup_deletes_cleaned_merged_branch_by_default() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
