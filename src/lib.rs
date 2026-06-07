@@ -8,4 +8,5 @@ pub mod providers;
 pub mod settings;
 pub mod setup;
 pub mod stack;
+pub mod style;
 pub mod upgrade;

@@ -48,7 +48,10 @@ pub fn remote_url(remote: &str) -> Result<Option<String>> {
 
 pub fn checkout(branch: &str) -> Result<()> {
     status(&["switch", branch]).with_context(|| format!("failed to check out {branch}"))?;
-    println!("switched to {branch}");
+    anstream::println!(
+        "switched to {}",
+        crate::style::paint(crate::style::BRANCH, branch)
+    );
     Ok(())
 }
 

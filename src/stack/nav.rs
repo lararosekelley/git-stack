@@ -9,6 +9,7 @@ use super::{
     trunk_branch,
 };
 use crate::git;
+use crate::style;
 
 pub fn print_parent(branch: Option<&str>) -> Result<()> {
     let branch = branch
@@ -156,14 +157,14 @@ pub fn print_stack() -> Result<()> {
     // Leaf-first, trunk last: the stack reads like a pile sitting on its
     // base, matching the up/down direction of navigation.
     for line in lines.iter().rev() {
-        println!("{line}");
+        anstream::println!("{line}");
     }
 
     for branch in branch_and_descendants(&root)? {
         if let Some(parent) = parents.get(&branch)
             && let Some(hint) = behind_parent_hint(&branch, parent)
         {
-            println!("hint: {hint}");
+            anstream::println!("{} {hint}", style::paint(style::HINT, "hint:"));
         }
     }
     Ok(())
@@ -191,12 +192,16 @@ fn collect_tree_lines(
     seen: &mut BTreeSet<String>,
     lines: &mut Vec<String>,
 ) {
-    let mut line = format!("{}{}", "  ".repeat(depth), branch);
-    if Some(branch) == trunk {
-        line.push_str(" (trunk)");
-    }
+    // A graphite-style rail: a filled marker on the branch you are on.
+    let mut line = "  ".repeat(depth);
     if branch == current {
-        line.push_str(" *");
+        line.push_str(&style::paint(style::CURRENT, &format!("\u{25c9} {branch}")));
+    } else {
+        line.push_str("\u{25cb} ");
+        line.push_str(&style::paint(style::BRANCH, branch));
+    }
+    if Some(branch) == trunk {
+        line.push_str(&style::paint(style::DIM, " (trunk)"));
     }
     lines.push(line);
 

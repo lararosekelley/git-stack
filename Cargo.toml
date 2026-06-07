@@ -22,6 +22,8 @@ exclude = [
 ]
 
 [dependencies]
+anstream = "1.0.0"
+anstyle = "1.0.14"
 anyhow = "1.0.100"
 axoupdater = { version = "0.10.0", default-features = false, features = ["github_releases", "blocking"] }
 clap = { version = "4.5.53", features = ["derive"] }
