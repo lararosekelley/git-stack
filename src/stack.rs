@@ -78,6 +78,76 @@ pub fn checkout_child(branch: Option<&str>) -> Result<()> {
     git::checkout(&child)
 }
 
+/// Check out the leaf of the current stack, following single children. A
+/// fork is ambiguous, like `up` without a branch.
+pub fn checkout_top() -> Result<()> {
+    let current = git::current_branch()?;
+    let mut top = current.clone();
+    loop {
+        let children = children_of(&top)?;
+        match children.as_slice() {
+            [] => break,
+            [child] => top = child.clone(),
+            _ => {
+                eprintln!("{top} has multiple stack children:");
+                for child in children {
+                    eprintln!("  {child}");
+                }
+                bail!("walk up from {top} with `git stk up <branch>`");
+            }
+        }
+    }
+
+    if top == current {
+        if children_of(&current)?.is_empty() && parent_of(&current)?.is_none() {
+            bail!("{current} is not in a stack");
+        }
+        println!("{current} is already at the top of the stack");
+        return Ok(());
+    }
+    git::checkout(&top)
+}
+
+/// Check out the bottom of the current stack: the branch just above the
+/// trunk. From the trunk itself, a single stacked child is unambiguous.
+pub fn checkout_bottom() -> Result<()> {
+    let current = git::current_branch()?;
+    let trunk = trunk_branch(&git::local_branches()?);
+
+    let bottom = if Some(&current) == trunk.as_ref() {
+        let children = children_of(&current)?;
+        match children.as_slice() {
+            [child] => child.clone(),
+            [] => bail!("{current} has no stacked branches"),
+            _ => {
+                eprintln!("{current} has multiple stack children:");
+                for child in children {
+                    eprintln!("  {child}");
+                }
+                bail!("choose one with `git stk up <branch>`");
+            }
+        }
+    } else {
+        let mut bottom = current.clone();
+        while let Some(parent) = parent_of(&bottom)? {
+            if Some(&parent) == trunk.as_ref() {
+                break;
+            }
+            bottom = parent;
+        }
+        bottom
+    };
+
+    if bottom == current {
+        if parent_of(&current)?.is_none() && children_of(&current)?.is_empty() {
+            bail!("{current} is not in a stack");
+        }
+        println!("{current} is already at the bottom of the stack");
+        return Ok(());
+    }
+    git::checkout(&bottom)
+}
+
 pub fn print_stack() -> Result<()> {
     let current = git::current_branch()?;
     let parents = parent_map()?;

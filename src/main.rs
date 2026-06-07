@@ -17,6 +17,8 @@ fn main() -> Result<()> {
         Command::Children(command) => command.run(),
         Command::Up(command) => command.run(),
         Command::Down(command) => command.run(),
+        Command::Top(command) => command.run(),
+        Command::Bottom(command) => command.run(),
         Command::List(command) => command.run(),
         Command::Status(command) => command.run(),
         Command::Adopt(command) => command.run(),

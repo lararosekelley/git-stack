@@ -18,6 +18,8 @@ pub enum Command {
     Children(commands::children::Children),
     Up(commands::up::Up),
     Down(commands::down::Down),
+    Top(commands::top::Top),
+    Bottom(commands::bottom::Bottom),
     List(commands::list::List),
     Status(commands::status::Status),
     Adopt(commands::adopt::Adopt),
