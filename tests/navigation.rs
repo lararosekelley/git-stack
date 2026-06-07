@@ -30,10 +30,18 @@ fn new_records_parent_and_supports_navigation() {
         .success()
         .stdout("feature/a\n");
 
-    repo.stack().arg("down").assert().success();
+    repo.stack()
+        .arg("down")
+        .assert()
+        .success()
+        .stdout("switched to main\n");
     assert_eq!(repo.git(["branch", "--show-current"]), "main");
 
-    repo.stack().arg("up").assert().success();
+    repo.stack()
+        .arg("up")
+        .assert()
+        .success()
+        .stdout("switched to feature/a\n");
     assert_eq!(repo.git(["branch", "--show-current"]), "feature/a");
 }
 

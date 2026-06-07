@@ -77,6 +77,9 @@ git stk list
 
 ## Commands
 
+Git's own narration (rebase progress, switch advice, push chatter) is captured and shown only when a
+git command fails; pass `-v`/`--verbose` to any command to stream it through instead.
+
 Local stack metadata:
 
 ```sh
