@@ -43,12 +43,7 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool, keep_branch: bool) -> Result
     // Refresh the stack overview ledger while the merged branches and their
     // reviews are still resolvable, so their entries get restyled rather
     // than dropped - mirroring sync.
-    let mut branch_parents = Vec::new();
-    for branch in &branches {
-        if let Some(parent) = stack::parent_for_branch(branch)? {
-            branch_parents.push((branch.clone(), parent));
-        }
-    }
+    let branch_parents = stack::branch_parents(&branches)?;
     crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run)?;
 
     for branch in branches {

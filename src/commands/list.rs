@@ -56,14 +56,7 @@ pub fn list_markdown() -> Result<()> {
     println!();
     for (index, (branch, review)) in entries.iter().enumerate() {
         let item = match review {
-            Some(review) => {
-                let label = if review.title.is_empty() {
-                    review.id.clone()
-                } else {
-                    format!("{} ({})", review.title, review.id)
-                };
-                format!("[{label}]({}) - {}", review.url, review.state)
-            }
+            Some(review) => format!("[{}]({}) - {}", review.label(), review.url, review.state),
             None => format!("`{branch}` (no review)"),
         };
         println!("{}. {item}", index + 1);

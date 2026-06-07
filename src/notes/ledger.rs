@@ -1,28 +1,19 @@
-//! Marker-delimited sections maintained in every review description: the
-//! stack-overview ledger and issue-closing links. Build, splice, parse, and
-//! self-repair of `<!-- git-stk:NAME -->` sections.
+//! The stack-overview ledger kept in every review body: build, parse, and
+//! refresh the marker-delimited overview whose merged and closed entries
+//! outlive their local branches.
 
 use anyhow::Result;
 use serde_json::{Value, json};
 
+use super::STACK_SECTION;
+use super::sections::{body_with_section, extract_section};
 use crate::providers::{ReviewProvider, ReviewRequest, ReviewState};
 
-const STACK_SECTION: &str = "stack";
-const CLOSES_SECTION: &str = "closes";
-const DESCRIPTION_SECTION: &str = "description";
 const DATA_PREFIX: &str = "<!-- git-stk:data ";
 const COMMENT_END: &str = "-->";
 const TOOL_URL: &str = "https://github.com/lararosekelley/git-stk";
 const LOGO_URL: &str =
     "https://raw.githubusercontent.com/lararosekelley/git-stk/main/assets/logo.svg";
-
-fn marker_start(name: &str) -> String {
-    format!("<!-- git-stk:{name} -->")
-}
-
-fn marker_end(name: &str) -> String {
-    format!("<!-- /git-stk:{name} -->")
-}
 
 /// One row of the stack-overview ledger. Live rows come from the provider;
 /// merged and closed rows outlive their local branches and are carried
@@ -187,148 +178,6 @@ pub fn update_stack_notes(
     Ok(())
 }
 
-/// Add a `Closes #N` line to each branch's review when the branch name
-/// references an issue (e.g. `123-fix-thing`, `fix/issue-123`), so the
-/// platform closes the issue when the review merges. Branches without an
-/// issue reference are passed over silently.
-pub fn update_closes_notes(
-    review_provider: &dyn ReviewProvider,
-    branches: &[String],
-    dry_run: bool,
-) -> Result<()> {
-    for branch in branches {
-        let Some(issue) = issue_number_from_branch(branch) else {
-            continue;
-        };
-
-        let Some(review) = review_provider.review_for_branch(branch)? else {
-            // On a dry run the review was likely never created; for real the
-            // submit just failed to produce one, which deserves a mention.
-            if dry_run {
-                println!("would link issue #{issue} in the review for {branch}");
-            } else {
-                println!("skipped issue link: no review found for {branch}");
-            }
-            continue;
-        };
-
-        if review.branch != *branch || review.state == ReviewState::Merged {
-            continue;
-        }
-
-        if dry_run {
-            println!("would link issue #{issue} in {}", review.id);
-            continue;
-        }
-
-        let body = review_provider.review_body(&review)?;
-        let updated = body_with_closes_note(&body, &format!("Closes #{issue}"));
-        if updated == body {
-            continue;
-        }
-
-        review_provider.update_review_body(&review, &updated)?;
-        println!("linked issue #{issue} in {}", review.id);
-    }
-
-    Ok(())
-}
-
-/// Write (or, with an empty string, clear) the description block in the
-/// branch's review body. Unlike the stack overview the block is sticky:
-/// submits without `--desc` never touch it.
-pub fn update_description_note(
-    review_provider: &dyn ReviewProvider,
-    branch: &str,
-    description: &str,
-    dry_run: bool,
-) -> Result<()> {
-    let verb = if description.is_empty() {
-        "clear"
-    } else {
-        "set"
-    };
-
-    let Some(review) = review_provider.review_for_branch(branch)? else {
-        if dry_run {
-            println!("would {verb} the description on the review for {branch}");
-        } else {
-            println!("skipped description: no review found for {branch}");
-        }
-        return Ok(());
-    };
-    if review.branch != *branch {
-        println!(
-            "skipped description: review {} belongs to {}",
-            review.id, review.branch
-        );
-        return Ok(());
-    }
-
-    if dry_run {
-        println!("would {verb} the description in {}", review.id);
-        return Ok(());
-    }
-
-    let body = review_provider.review_body(&review)?;
-    let updated = if description.is_empty() {
-        if !body.contains(&marker_start(DESCRIPTION_SECTION)) {
-            return Ok(());
-        }
-        strip_sections(&body, DESCRIPTION_SECTION)
-            .trim_end()
-            .to_owned()
-    } else {
-        body_with_description_note(&body, description)
-    };
-    if updated == body {
-        return Ok(());
-    }
-
-    review_provider.update_review_body(&review, &updated)?;
-    println!(
-        "{} description in {}",
-        if description.is_empty() {
-            "cleared"
-        } else {
-            "set"
-        },
-        review.id
-    );
-    Ok(())
-}
-
-/// The issue number a branch name refers to, if any. A path segment that
-/// starts with the number (`123-fix-thing`, `fix/123-thing`, bare `123`) or
-/// prefixes it with issue/issues (`issue-123`, `fix/issues-123-thing`)
-/// counts; trailing numbers do not, to keep version-ish names from
-/// closing unrelated issues.
-fn issue_number_from_branch(branch: &str) -> Option<u64> {
-    for segment in branch.split('/') {
-        let lowered = segment.to_ascii_lowercase();
-        let candidate = lowered
-            .strip_prefix("issue-")
-            .or_else(|| lowered.strip_prefix("issues-"))
-            .unwrap_or(&lowered);
-
-        let end = candidate
-            .find(|character: char| !character.is_ascii_digit())
-            .unwrap_or(candidate.len());
-        let (digits, rest) = candidate.split_at(end);
-        if digits.is_empty() || !(rest.is_empty() || rest.starts_with('-')) {
-            continue;
-        }
-
-        if let Ok(number) = digits.parse::<u64>()
-            && number > 0
-        {
-            return Some(number);
-        }
-    }
-
-    None
-}
-
 /// Render the overview for one review: a hidden data line carrying the
 /// ledger, every entry leaf-first as a status-styled bullet, a pointer on
 /// the review being viewed, the trunk in backticks at the bottom, and a
@@ -351,11 +200,7 @@ fn build_stack_note(entries: &[NoteEntry], current: usize, trunk: &str) -> Strin
 /// A status emoji as the bullet, strikethrough plus a suffix for entries
 /// that have left the stack, and the pointer on the current review.
 fn render_entry(entry: &NoteEntry, current: bool) -> String {
-    let label = if entry.title.is_empty() {
-        entry.id.clone()
-    } else {
-        format!("{} ({})", entry.title, entry.id)
-    };
+    let label = crate::providers::label(&entry.title, &entry.id);
     let link = format!("[{label}]({})", entry.url);
 
     let mut line = match entry.state.as_str() {
@@ -476,101 +321,9 @@ fn parse_entry_line(line: &str) -> Option<NoteEntry> {
     })
 }
 
-/// The content of the first well-formed marker section, if any.
-fn extract_section<'body>(body: &'body str, name: &str) -> Option<&'body str> {
-    let start_marker = marker_start(name);
-    let end_marker = marker_end(name);
-    let start = body.find(&start_marker)? + start_marker.len();
-    let length = body[start..].find(&end_marker)?;
-    Some(&body[start..start + length])
-}
-
-/// Replace the marker-delimited section in a review body, appending it at
-/// the end. Damaged markup (orphaned or reordered markers, duplicates) is
-/// stripped first, so the section self-repairs on the next update.
-fn body_with_section(body: &str, name: &str, content: &str) -> String {
-    let section = format!("{}\n{content}\n{}", marker_start(name), marker_end(name));
-    let cleaned = strip_sections(body, name);
-
-    if cleaned.trim().is_empty() {
-        section
-    } else {
-        format!("{}\n\n{section}", cleaned.trim_end())
-    }
-}
-
-/// Splice the closes note in, keeping it above the stack overview so the
-/// closing keyword reads as part of the description rather than the footer.
-fn body_with_closes_note(body: &str, note: &str) -> String {
-    body_with_section_before(body, CLOSES_SECTION, note, &[STACK_SECTION])
-}
-
-/// Splice the user's description in, above every managed section so it
-/// reads as the opening of the body.
-fn body_with_description_note(body: &str, description: &str) -> String {
-    body_with_section_before(
-        body,
-        DESCRIPTION_SECTION,
-        description,
-        &[CLOSES_SECTION, STACK_SECTION],
-    )
-}
-
-/// Replace the named section, keeping it above the first of the `before`
-/// sections present in the body; without one, append at the end.
-fn body_with_section_before(body: &str, name: &str, content: &str, before: &[&str]) -> String {
-    let section = format!("{}\n{content}\n{}", marker_start(name), marker_end(name));
-    let cleaned = strip_sections(body, name);
-
-    let position = before
-        .iter()
-        .filter_map(|other| cleaned.find(&marker_start(other)))
-        .min();
-    match position {
-        Some(position) => {
-            let head = cleaned[..position].trim_end();
-            let tail = &cleaned[position..];
-            if head.is_empty() {
-                format!("{section}\n\n{tail}")
-            } else {
-                format!("{head}\n\n{section}\n\n{tail}")
-            }
-        }
-        None if cleaned.trim().is_empty() => section,
-        None => format!("{}\n\n{section}", cleaned.trim_end()),
-    }
-}
-
-/// Remove every well-formed marker section and any orphaned markers.
-fn strip_sections(body: &str, name: &str) -> String {
-    let start_marker = marker_start(name);
-    let end_marker = marker_end(name);
-    let mut result = body.to_owned();
-
-    while let Some(start) = result.find(&start_marker) {
-        match result[start..].find(&end_marker) {
-            Some(end_offset) => {
-                let end = start + end_offset + end_marker.len();
-                result.replace_range(start..end, "");
-            }
-            None => result.replace_range(start..start + start_marker.len(), ""),
-        }
-    }
-    while let Some(start) = result.find(&end_marker) {
-        result.replace_range(start..start + end_marker.len(), "");
-    }
-
-    // Collapse the blank-line craters left behind by removed sections.
-    while result.contains("\n\n\n") {
-        result = result.replace("\n\n\n", "\n\n");
-    }
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::providers::ReviewState;
 
     fn entry(id: &str, title: &str, url: &str, state: &str) -> NoteEntry {
         NoteEntry {
@@ -703,166 +456,6 @@ mod tests {
                 entry("#12", "Bottom change", "https://example.com/12", "open"),
             ]
         );
-    }
-
-    #[test]
-    fn issue_number_from_branch_reads_supported_shapes() {
-        assert_eq!(issue_number_from_branch("123-fix-thing"), Some(123));
-        assert_eq!(issue_number_from_branch("fix/123-thing"), Some(123));
-        assert_eq!(issue_number_from_branch("fix/issue-123"), Some(123));
-        assert_eq!(issue_number_from_branch("feat/issues-9-cleanup"), Some(9));
-        assert_eq!(issue_number_from_branch("42"), Some(42));
-    }
-
-    #[test]
-    fn issue_number_from_branch_rejects_lookalikes() {
-        assert_eq!(issue_number_from_branch("feature/b"), None);
-        assert_eq!(issue_number_from_branch("fix-thing-123"), None);
-        assert_eq!(issue_number_from_branch("v2-migration"), None);
-        assert_eq!(issue_number_from_branch("2024q1-cleanup"), None);
-        assert_eq!(issue_number_from_branch("0-zero"), None);
-        assert_eq!(issue_number_from_branch("upgrade-issue"), None);
-    }
-
-    #[test]
-    fn body_with_section_appends_to_existing_body() {
-        let updated = body_with_section("Some PR description.\n", STACK_SECTION, "stack list");
-        assert_eq!(
-            updated,
-            "Some PR description.\n\n<!-- git-stk:stack -->\nstack list\n<!-- /git-stk:stack -->"
-        );
-    }
-
-    #[test]
-    fn body_with_section_fills_empty_body() {
-        let updated = body_with_section("", STACK_SECTION, "stack list");
-        assert_eq!(
-            updated,
-            "<!-- git-stk:stack -->\nstack list\n<!-- /git-stk:stack -->"
-        );
-    }
-
-    #[test]
-    fn body_with_section_replaces_existing_section() {
-        let body = "Intro.\n\n<!-- git-stk:stack -->\nold list\n<!-- /git-stk:stack -->\n\nOutro.";
-        let updated = body_with_section(body, STACK_SECTION, "new list");
-        assert_eq!(
-            updated,
-            "Intro.\n\nOutro.\n\n<!-- git-stk:stack -->\nnew list\n<!-- /git-stk:stack -->"
-        );
-    }
-
-    #[test]
-    fn body_with_section_is_idempotent() {
-        let body = body_with_section("Description.", STACK_SECTION, "stack list");
-        assert_eq!(body_with_section(&body, STACK_SECTION, "stack list"), body);
-    }
-
-    #[test]
-    fn body_with_section_keeps_other_sections_intact() {
-        let body = "Intro.\n\n<!-- git-stk:closes -->\nCloses #5\n<!-- /git-stk:closes -->";
-        let updated = body_with_section(body, STACK_SECTION, "stack list");
-        assert!(updated.contains("<!-- git-stk:closes -->\nCloses #5\n<!-- /git-stk:closes -->"));
-        assert!(updated.ends_with("<!-- /git-stk:stack -->"));
-    }
-
-    #[test]
-    fn body_with_section_repairs_orphaned_start_marker() {
-        let body = "Intro.\n\n<!-- git-stk:stack -->\nleftover text";
-        let updated = body_with_section(body, STACK_SECTION, "fresh list");
-        assert_eq!(
-            updated,
-            "Intro.\n\nleftover text\n\n<!-- git-stk:stack -->\nfresh list\n<!-- /git-stk:stack -->"
-        );
-    }
-
-    #[test]
-    fn body_with_section_repairs_orphaned_end_marker() {
-        let body = "Intro.\nstray\n<!-- /git-stk:stack -->\nOutro.";
-        let updated = body_with_section(body, STACK_SECTION, "fresh list");
-        assert!(updated.matches("<!-- git-stk:stack -->").count() == 1);
-        assert!(updated.matches("<!-- /git-stk:stack -->").count() == 1);
-        assert!(updated.contains("Intro.\nstray"));
-        assert!(updated.ends_with("<!-- /git-stk:stack -->"));
-    }
-
-    #[test]
-    fn body_with_section_repairs_reversed_and_duplicate_markers() {
-        let body = "<!-- /git-stk:stack -->\nA\n<!-- git-stk:stack -->\nB\n\
-                    <!-- git-stk:stack -->\nC\n<!-- /git-stk:stack -->\nD";
-        let updated = body_with_section(body, STACK_SECTION, "fresh list");
-        assert_eq!(updated.matches("<!-- git-stk:stack -->").count(), 1);
-        assert_eq!(updated.matches("<!-- /git-stk:stack -->").count(), 1);
-        assert!(updated.contains("fresh list"));
-        assert!(updated.ends_with("<!-- /git-stk:stack -->"));
-    }
-
-    #[test]
-    fn body_with_closes_note_appends_without_a_stack_section() {
-        let updated = body_with_closes_note("Description.", "Closes #5");
-        assert_eq!(
-            updated,
-            "Description.\n\n<!-- git-stk:closes -->\nCloses #5\n<!-- /git-stk:closes -->"
-        );
-    }
-
-    #[test]
-    fn body_with_closes_note_lands_above_the_stack_section() {
-        let body = "Description.\n\n<!-- git-stk:stack -->\nstack list\n<!-- /git-stk:stack -->";
-        let updated = body_with_closes_note(body, "Closes #5");
-        assert_eq!(
-            updated,
-            "Description.\n\n\
-             <!-- git-stk:closes -->\nCloses #5\n<!-- /git-stk:closes -->\n\n\
-             <!-- git-stk:stack -->\nstack list\n<!-- /git-stk:stack -->"
-        );
-    }
-
-    #[test]
-    fn body_with_closes_note_replaces_a_stale_note_in_place() {
-        let body = "Intro.\n\n<!-- git-stk:closes -->\nCloses #4\n<!-- /git-stk:closes -->\n\n\
-                    <!-- git-stk:stack -->\nstack list\n<!-- /git-stk:stack -->";
-        let updated = body_with_closes_note(body, "Closes #5");
-        assert_eq!(updated.matches("<!-- git-stk:closes -->").count(), 1);
-        assert!(updated.contains("Closes #5"));
-        assert!(!updated.contains("Closes #4"));
-        let closes = updated.find("Closes #5").expect("closes note");
-        let stack = updated.find("stack list").expect("stack note");
-        assert!(
-            closes < stack,
-            "closes note should sit above the stack note"
-        );
-    }
-
-    #[test]
-    fn body_with_description_note_lands_above_every_managed_section() {
-        let body = "Intro.\n\n\
-                    <!-- git-stk:closes -->\nCloses #5\n<!-- /git-stk:closes -->\n\n\
-                    <!-- git-stk:stack -->\nstack list\n<!-- /git-stk:stack -->";
-        let updated = body_with_description_note(body, "Summary.");
-
-        let intro = updated.find("Intro.").expect("intro");
-        let description = updated.find("Summary.").expect("description");
-        let closes = updated.find("Closes #5").expect("closes");
-        let stack = updated.find("stack list").expect("stack");
-        assert!(intro < description && description < closes && closes < stack);
-        assert!(
-            updated
-                .contains("<!-- git-stk:description -->\nSummary.\n<!-- /git-stk:description -->")
-        );
-    }
-
-    #[test]
-    fn body_with_description_note_replaces_in_place() {
-        let body = "<!-- git-stk:description -->\nOld.\n<!-- /git-stk:description -->\n\n\
-                    <!-- git-stk:stack -->\nstack list\n<!-- /git-stk:stack -->";
-        let updated = body_with_description_note(body, "New.");
-        assert_eq!(updated.matches("<!-- git-stk:description -->").count(), 1);
-        assert!(updated.contains("New."));
-        assert!(!updated.contains("Old."));
-        let description = updated.find("New.").expect("description");
-        let stack = updated.find("stack list").expect("stack");
-        assert!(description < stack);
     }
 
     #[test]

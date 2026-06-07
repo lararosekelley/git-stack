@@ -181,4 +181,18 @@ impl ReviewRequest {
             .or_else(|| self.id.strip_prefix('!'))
             .unwrap_or(&self.id)
     }
+
+    /// "Title (#12)", or just the id when there is no title.
+    pub fn label(&self) -> String {
+        label(&self.title, &self.id)
+    }
+}
+
+/// The display label for a review: "Title (#12)", or the bare id.
+pub(crate) fn label(title: &str, id: &str) -> String {
+    if title.is_empty() {
+        id.to_owned()
+    } else {
+        format!("{title} ({id})")
+    }
 }

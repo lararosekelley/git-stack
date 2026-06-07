@@ -53,7 +53,7 @@ fn merge(dry_run: bool, yes: bool, auto: bool) -> Result<()> {
     } else {
         strategy.clone()
     };
-    let label = review_label(&review);
+    let label = review.label();
 
     if dry_run {
         println!("would merge {label} into {} ({mode})", review.base);
@@ -106,7 +106,7 @@ fn merge_all(dry_run: bool, yes: bool) -> Result<()> {
             let review = open_review_for(review_provider.as_ref(), provider.kind, branch)?;
             println!(
                 "would merge {} into {} ({strategy})",
-                review_label(&review),
+                review.label(),
                 review.base
             );
         }
@@ -194,14 +194,6 @@ fn open_review_for(
     Ok(review)
 }
 
-fn review_label(review: &ReviewRequest) -> String {
-    if review.title.is_empty() {
-        review.id.clone()
-    } else {
-        format!("{} ({})", review.title, review.id)
-    }
-}
-
 enum MergeOutcome {
     Merged,
     Scheduled,
@@ -216,7 +208,7 @@ fn merge_and_check(
     strategy: &str,
     auto: bool,
 ) -> Result<MergeOutcome> {
-    let label = review_label(review);
+    let label = review.label();
 
     let output = match review_provider.merge_review(review, strategy, auto) {
         Ok(output) => output,
