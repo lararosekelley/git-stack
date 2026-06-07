@@ -29,6 +29,10 @@ pub struct Submit {
     /// Do not push branches, overriding stk.pushOnSubmit.
     #[arg(long, action = ArgAction::SetTrue)]
     no_push: bool,
+    /// Set a description block at the top of the review body; an empty
+    /// string clears it. Applies to the current or named branch only.
+    #[arg(long, short = 'd')]
+    desc: Option<String>,
 }
 
 impl Run for Submit {
@@ -48,6 +52,7 @@ impl Run for Submit {
             submit_stack,
             self.dry_run,
             PushMode::from_flags(self.push, self.no_push),
+            self.desc.as_deref(),
         )
     }
 }
@@ -57,10 +62,13 @@ pub fn submit(
     submit_stack: bool,
     dry_run: bool,
     push_mode: crate::cli::PushMode,
+    desc: Option<&str>,
 ) -> Result<()> {
     let branch = branch
         .map(str::to_owned)
         .map_or_else(git::current_branch, Ok)?;
+    // The description targets this branch's review even in stack mode.
+    let desc_branch = branch.clone();
 
     let branches = if submit_stack {
         // The whole stack containing the current branch, from anywhere in it:
@@ -109,8 +117,17 @@ pub fn submit(
         )?);
     }
 
-    // After every review exists, link any issue the branch name references,
-    // then (in stack mode) write the stack overview into each body.
+    // After every review exists, write the description, link any issue the
+    // branch name references, then (in stack mode) write the stack overview
+    // into each body.
+    if let Some(desc) = desc {
+        crate::notes::update_description_note(
+            review_provider.as_ref(),
+            &desc_branch,
+            desc,
+            dry_run,
+        )?;
+    }
     crate::notes::update_closes_notes(review_provider.as_ref(), &branches, dry_run)?;
     if submit_stack {
         crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run)?;
