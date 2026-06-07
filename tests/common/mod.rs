@@ -96,6 +96,10 @@ impl TestRepo {
         command.env("GIT_EDITOR", "true");
         command.env("GIT_CONFIG_GLOBAL", "/dev/null");
         command.env("GIT_CONFIG_NOSYSTEM", "1");
+        // Hermetic color: ambient terminal settings must not restyle output.
+        command.env_remove("CLICOLOR");
+        command.env_remove("CLICOLOR_FORCE");
+        command.env_remove("NO_COLOR");
         command
     }
 

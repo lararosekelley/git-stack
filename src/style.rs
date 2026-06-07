@@ -1,0 +1,64 @@
+//! Semantic terminal styles. Styled lines must be printed through
+//! `anstream::println!`/`eprintln!`, which strip color for pipes, NO_COLOR,
+//! and consoles that cannot render it.
+
+use anstyle::{AnsiColor, Style};
+
+use crate::providers::ReviewState;
+
+/// Branch names.
+pub const BRANCH: Style = AnsiColor::Cyan.on_default();
+/// The branch you are standing on.
+pub const CURRENT: Style = AnsiColor::Green.on_default().bold();
+/// Secondary detail: URLs, the trunk tag, counts.
+pub const DIM: Style = Style::new().dimmed();
+/// The `hint:` prefix.
+pub const HINT: Style = AnsiColor::Cyan.on_default();
+/// The `warning:` prefix.
+pub const WARN: Style = AnsiColor::Yellow.on_default();
+
+/// Review states, matching the ledger emoji: green open, purple merged,
+/// red closed.
+pub const OPEN: Style = AnsiColor::Green.on_default();
+pub const MERGED: Style = AnsiColor::Magenta.on_default();
+pub const CLOSED: Style = AnsiColor::Red.on_default();
+
+pub fn paint(style: Style, text: &str) -> String {
+    format!("{style}{text}{style:#}")
+}
+
+/// A review state in its color.
+pub fn state(state: &ReviewState) -> String {
+    let style = match state {
+        ReviewState::Open => OPEN,
+        ReviewState::Merged => MERGED,
+        ReviewState::Closed => CLOSED,
+        ReviewState::Unknown(_) => DIM,
+    };
+    paint(style, &state.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn paint_wraps_text_in_escape_codes() {
+        let painted = paint(BRANCH, "feature/a");
+        assert!(painted.contains("feature/a"));
+        assert!(painted.starts_with('\u{1b}'));
+        assert!(painted.ends_with('m'));
+    }
+
+    #[test]
+    fn state_uses_the_ledger_palette() {
+        assert!(state(&ReviewState::Open).contains("open"));
+        assert!(state(&ReviewState::Merged).contains("merged"));
+        assert!(state(&ReviewState::Closed).contains("closed"));
+        assert_ne!(
+            state(&ReviewState::Open),
+            state(&ReviewState::Merged),
+            "states should not share a style"
+        );
+    }
+}

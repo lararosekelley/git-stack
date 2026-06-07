@@ -78,7 +78,8 @@ git stk list
 ## Commands
 
 Git's own narration (rebase progress, switch advice, push chatter) is captured and shown only when a
-git command fails; pass `-v`/`--verbose` to any command to stream it through instead.
+git command fails; pass `-v`/`--verbose` to any command to stream it through instead. Output is colored
+when the terminal supports it; pipes and [`NO_COLOR`](https://no-color.org/) turn it off.
 
 Local stack metadata:
 

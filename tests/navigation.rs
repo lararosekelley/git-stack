@@ -1,6 +1,7 @@
 mod common;
 
 use common::TestRepo;
+use predicates::prelude::PredicateBooleanExt;
 
 #[test]
 fn new_records_parent_and_supports_navigation() {
@@ -70,7 +71,7 @@ fn adopt_list_and_detach_manage_existing_branches() {
         .arg("list")
         .assert()
         .success()
-        .stdout("    feature/b\n  feature/a\nmain (trunk) *\n");
+        .stdout("    \u{25cb} feature/b\n  \u{25cb} feature/a\n\u{25c9} main (trunk)\n");
 
     repo.stack()
         .args(["detach", "feature/b"])
@@ -263,5 +264,25 @@ fn list_prints_leaf_first_without_trunk_label_for_fragments() {
         .arg("list")
         .assert()
         .success()
-        .stdout("  feature/y *\nfeature/x\n");
+        .stdout("  \u{25c9} feature/y\n\u{25cb} feature/x\n");
+}
+
+#[test]
+fn list_colors_only_when_the_terminal_wants_it() {
+    let repo = TestRepo::new();
+    repo.stack().args(["new", "feature/a"]).assert().success();
+
+    // Captured output (not a tty) stays plain; forcing color emits codes.
+    repo.stack()
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\u{1b}[").not());
+
+    repo.stack()
+        .arg("list")
+        .env("CLICOLOR_FORCE", "1")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\u{1b}["));
 }

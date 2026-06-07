@@ -518,6 +518,8 @@ dependencies = [
 name = "git-stk"
 version = "0.7.0"
 dependencies = [
+ "anstream",
+ "anstyle",
  "anyhow",
  "assert_cmd",
  "axoupdater",
