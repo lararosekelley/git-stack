@@ -20,6 +20,7 @@ pub mod merge;
 pub mod new;
 pub mod parent;
 pub mod provider;
+pub mod rename;
 pub mod repair;
 pub mod restack;
 pub mod review;

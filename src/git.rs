@@ -48,6 +48,11 @@ pub fn delete_branch(branch: &str) -> Result<()> {
     status(&["branch", "-D", branch]).with_context(|| format!("failed to delete branch {branch}"))
 }
 
+/// Rename a branch; git moves its `branch.<name>.*` config along with it.
+pub fn rename_branch(old: &str, new: &str) -> Result<()> {
+    status(&["branch", "-m", old, new]).with_context(|| format!("failed to rename {old} to {new}"))
+}
+
 /// Fast-forward a local branch from its remote without checking it out.
 pub fn fetch_branch(remote: &str, branch: &str) -> Result<()> {
     let refspec = format!("{branch}:{branch}");
