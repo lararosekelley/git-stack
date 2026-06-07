@@ -53,6 +53,7 @@ impl NoteEntry {
             state,
             url: self.url.clone(),
             title: self.title.clone(),
+            draft: false,
         }
     }
 

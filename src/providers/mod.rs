@@ -81,6 +81,7 @@ pub struct ReviewRequest {
     pub state: ReviewState,
     pub url: String,
     pub title: String,
+    pub draft: bool,
 }
 
 pub trait ReviewProvider {
@@ -105,6 +106,13 @@ pub trait ReviewProvider {
     /// With `auto`, schedule the merge for when required checks pass
     /// instead of merging now.
     fn merge_review(&self, review: &ReviewRequest, strategy: &str, auto: bool) -> Result<String>;
+
+    /// Block until the review's checks settle. Ok(true) when they pass (or
+    /// there are none), Ok(false) when something failed.
+    fn wait_for_checks(&self, review: &ReviewRequest) -> Result<bool>;
+
+    /// Mark a draft review as ready for review.
+    fn mark_ready(&self, review: &ReviewRequest) -> Result<String>;
 }
 
 pub fn detect_provider() -> Result<DetectedProvider> {

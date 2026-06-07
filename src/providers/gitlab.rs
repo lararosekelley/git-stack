@@ -1,7 +1,7 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::json::{
-    first_json_item, optional_string, parse_body_field, parse_state, required_string,
+    first_json_item, optional_bool, optional_string, parse_body_field, parse_state, required_string,
 };
 use super::{ReviewProvider, ReviewRequest, command_output};
 
@@ -78,6 +78,34 @@ impl ReviewProvider for GitLabProvider {
         }
         command_output("glab", &args)
     }
+
+    fn wait_for_checks(&self, review: &ReviewRequest) -> Result<bool> {
+        loop {
+            let output = command_output(
+                "glab",
+                &["mr", "view", review.id_value(), "--output", "json"],
+            )?;
+            let value: serde_json::Value =
+                serde_json::from_str(&output).context("failed to parse glab MR JSON")?;
+            let status = value
+                .get("head_pipeline")
+                .or_else(|| value.get("pipeline"))
+                .and_then(|pipeline| pipeline.get("status"))
+                .and_then(serde_json::Value::as_str);
+
+            match status {
+                // No pipeline configured: nothing to wait for.
+                None => return Ok(true),
+                Some("success") | Some("skipped") | Some("manual") => return Ok(true),
+                Some("failed") | Some("canceled") => return Ok(false),
+                _ => std::thread::sleep(std::time::Duration::from_secs(10)),
+            }
+        }
+    }
+
+    fn mark_ready(&self, review: &ReviewRequest) -> Result<String> {
+        command_output("glab", &["mr", "update", review.id_value(), "--ready"])
+    }
 }
 
 fn list_review(branch: &str, state_flag: Option<&str>) -> Result<Option<ReviewRequest>> {
@@ -103,6 +131,7 @@ fn parse_gitlab_review(output: &str) -> Result<Option<ReviewRequest>> {
         state: parse_state(&required_string(&review, &["state"])?),
         url: required_string(&review, &["web_url", "webUrl", "url"])?,
         title: optional_string(&review, "title"),
+        draft: optional_bool(&review, "draft"),
     }))
 }
 
@@ -128,6 +157,7 @@ mod tests {
                 state: ReviewState::Merged,
                 url: "https://gitlab.com/owner/repo/-/merge_requests/34".to_owned(),
                 title: String::new(),
+                draft: false,
             }
         );
     }

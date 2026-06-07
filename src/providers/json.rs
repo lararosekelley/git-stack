@@ -15,6 +15,10 @@ pub(super) fn parse_body_field(output: &str, field: &str) -> Result<String> {
         .to_owned())
 }
 
+pub(super) fn optional_bool(value: &Value, key: &str) -> bool {
+    value.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
 pub(super) fn optional_string(value: &Value, key: &str) -> String {
     value
         .get(key)

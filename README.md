@@ -146,10 +146,10 @@ git stk config
 git stk status [branch]
 git stk review [branch]
 git stk sync [--dry-run] [--push | --no-push]
-git stk merge [-y] [--auto | --all] [--dry-run]
+git stk merge [-y] [--auto | --all [--wait | --no-wait]] [--dry-run]
 git stk repair [--dry-run]
-git stk submit [branch] [-d <desc>] [--draft | --no-draft] [--dry-run] [--push | --no-push]
-git stk submit [--stack | --no-stack | --downstack] [-d <desc>] [--draft | --no-draft] [--dry-run] [--push | --no-push]
+git stk submit [branch] [-d <desc>] [--draft | --no-draft] [--ready] [--dry-run] [--push | --no-push]
+git stk submit [--stack | --no-stack | --downstack] [-d <desc>] [--draft | --no-draft] [--ready] [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--keep-branch]
 ```
 
@@ -165,7 +165,11 @@ flow. Landing a stack becomes one `git stk merge` per PR - or just `git stk merg
 merge-and-sync bottom-up until the stack is complete, with a single confirmation up front. With required
 checks still running, `--auto` schedules the merge instead (GitHub `--auto`, GitLab auto-merge); a merge
 that only got scheduled - on GitLab that is the default - skips the sync (and stops `--all`) with a note
-to rerun `git stk sync` once checks pass.
+to rerun `git stk sync` once checks pass. `merge --all --wait` (or `git config stk.mergeWait true`) waits
+for each review's checks to settle before merging it - on GitHub through `gh pr checks --watch`'s live
+table - turning the landing into genuinely one command; a failing check stops the loop, and `--no-wait`
+overrides the config. There is no artificial timeout: the wait runs as long as the platform reports
+checks in progress, and ctrl-c is always safe (rerun to resume from the new bottom).
 
 `submit --stack` and `restack` operate on the whole stack containing the current branch - walk to the
 root, then every branch above it - so it never matters where in the stack you are standing. With
@@ -174,7 +178,8 @@ submits a single branch.
 
 `submit --downstack` submits the stack from its bottom through the current branch only, so
 work-in-progress branches above you stay local. `--draft` (or `git config stk.submitDraft true`) opens
-new reviews as drafts; `--no-draft` overrides the config.
+new reviews as drafts; `--no-draft` overrides the config, and `submit --ready` flips the submitted
+branches' existing drafts to ready for review.
 
 `submit --push` (or `git config stk.pushOnSubmit true`) pushes the submitted branches with
 `-u --force-with-lease` before creating or updating reviews, so new branches exist remotely and rebased
@@ -240,6 +245,8 @@ Everything is optional; defaults shown below:
     submitStack = true
     ; Strategy for `merge`: squash, rebase, or merge. Default: squash.
     mergeStrategy = squash
+    ; `merge --all` waits for each review's checks before merging it. Default: false.
+    mergeWait = true
     ; Open new reviews as drafts. Default: false.
     submitDraft = true
     ; Skip the once-a-day check for a newer release. Default: false.

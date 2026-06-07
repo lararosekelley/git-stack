@@ -48,6 +48,9 @@ pub struct Submit {
     /// Create new reviews ready for review, overriding stk.submitDraft.
     #[arg(long, action = ArgAction::SetTrue)]
     no_draft: bool,
+    /// Mark the submitted branches' existing draft reviews as ready.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with = "draft")]
+    ready: bool,
 }
 
 impl Run for Submit {
@@ -80,6 +83,7 @@ impl Run for Submit {
             PushMode::from_flags(self.push, self.no_push),
             self.desc.as_deref(),
             draft,
+            self.ready,
         )
     }
 }
@@ -93,6 +97,7 @@ pub fn submit(
     push_mode: crate::cli::PushMode,
     desc: Option<&str>,
     draft: bool,
+    ready: bool,
 ) -> Result<()> {
     let branch = branch
         .map(str::to_owned)
@@ -153,6 +158,28 @@ pub fn submit(
             dry_run,
             draft,
         )?);
+    }
+
+    // Flip drafts in scope to ready for review (the escape hatch for
+    // stk.submitDraft users).
+    if ready {
+        for branch in &branches {
+            let Some(review) = review_provider.review_for_branch(branch)? else {
+                continue;
+            };
+            if review.branch != *branch || !review.draft {
+                continue;
+            }
+            if dry_run {
+                println!("would mark {} ready", review.id);
+                continue;
+            }
+            let output = review_provider.mark_ready(&review)?;
+            anstream::println!("marked {} ready", review.id);
+            if !output.is_empty() {
+                println!("{output}");
+            }
+        }
     }
 
     // After every review exists, write the description, link any issue the
