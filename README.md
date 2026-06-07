@@ -136,7 +136,7 @@ git stk config
 git stk status [branch]
 git stk review [branch]
 git stk sync [--dry-run] [--push | --no-push]
-git stk merge [-y] [--auto] [--dry-run]
+git stk merge [-y] [--auto | --all] [--dry-run]
 git stk repair [--dry-run]
 git stk submit [branch] [--dry-run] [--push | --no-push]
 git stk submit [--stack | --no-stack] [--dry-run] [--push | --no-push]
@@ -151,9 +151,11 @@ you need.
 
 `merge` merges the review at the bottom of the stack via the provider CLI (strategy from
 `stk.mergeStrategy`; squash by default), confirming first unless `-y` is passed, then runs the full `sync`
-flow. Landing a stack becomes one `git stk merge` per PR. With required checks still running, `--auto`
-schedules the merge instead (GitHub `--auto`, GitLab auto-merge); a merge that only got scheduled - on
-GitLab that is the default - skips the sync and says to rerun it once checks pass.
+flow. Landing a stack becomes one `git stk merge` per PR - or just `git stk merge --all`, which repeats
+merge-and-sync bottom-up until the stack is complete, with a single confirmation up front. With required
+checks still running, `--auto` schedules the merge instead (GitHub `--auto`, GitLab auto-merge); a merge
+that only got scheduled - on GitLab that is the default - skips the sync (and stops `--all`) with a note
+to rerun `git stk sync` once checks pass.
 
 `submit --stack` and `restack` operate on the whole stack containing the current branch - walk to the
 root, then every branch above it - so it never matters where in the stack you are standing. With
