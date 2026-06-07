@@ -2,6 +2,7 @@ use std::fs;
 mod common;
 
 use common::TestRepo;
+use predicates::prelude::PredicateBooleanExt;
 
 #[test]
 fn setup_installs_man_page_and_wires_bashrc() {
@@ -22,7 +23,7 @@ fn setup_installs_man_page_and_wires_bashrc() {
 
     assert!(home.join(".local/share/man/man1/git-stk.1").exists());
     let rc = fs::read_to_string(home.join(".bashrc")).expect("read bashrc");
-    assert!(rc.contains("source <(git stk completions bash)"));
+    assert!(rc.contains("command -v git-stk >/dev/null && source <(git stk completions bash)"));
 }
 
 #[test]
@@ -117,8 +118,31 @@ fn setup_refresh_installs_man_page_without_touching_rc() {
         .env("SHELL", "/bin/bash")
         .assert()
         .success()
-        .stdout(predicates::str::contains("installed man page"));
+        .stdout(predicates::str::contains("installed man page"))
+        .stdout(predicates::str::contains(
+            "bash completions are not configured; run `git stk setup`",
+        ));
 
     assert!(home.join(".local/share/man/man1/git-stk.1").exists());
     assert!(!home.join(".bashrc").exists());
+}
+
+#[test]
+fn setup_refresh_stays_quiet_when_completions_are_configured() {
+    let repo = TestRepo::new();
+    let home = repo.path().join("home");
+    fs::create_dir_all(&home).expect("create fake home");
+    fs::write(
+        home.join(".bashrc"),
+        "# added by git-stk setup\ncommand -v git-stk >/dev/null && source <(git stk completions bash)\n",
+    )
+    .expect("write bashrc");
+
+    repo.stack()
+        .args(["setup", "--refresh"])
+        .env("HOME", &home)
+        .env("SHELL", "/bin/bash")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("completions are not configured").not());
 }

@@ -49,8 +49,8 @@ offers only the current branch's stack children). The installed binary prints it
 so completions stay in sync across upgrades:
 
 ```sh
-# bash: add to ~/.bashrc
-source <(git stk completions bash)
+# bash: add to ~/.bashrc (the guard keeps shell startup quiet if git-stk is removed)
+command -v git-stk >/dev/null && source <(git stk completions bash)
 
 # zsh: write to a directory on your fpath
 git stk completions zsh > "${fpath[1]}/_git-stk"

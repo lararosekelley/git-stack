@@ -21,6 +21,8 @@ hosting = "github"
 publish-jobs = ["./publish-crates"]
 # Whether to install an updater program
 install-updater = false
+# Printed by the shell/powershell installers after a successful install
+install-success-msg = "git-stk installed! Run `git stk setup` to install the man page and shell completions."
 
 [dist.binaries]
 aarch64-apple-darwin = ["git-stk"]
