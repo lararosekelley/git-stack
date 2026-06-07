@@ -152,8 +152,14 @@ ones are updated safely.
 
 `submit --stack` also maintains a stack overview at the end of every PR/MR description: the full stack as
 linked bullets (leaf-first, with a pointer on the PR being viewed) sitting on the trunk, plus a footer
-crediting the tool. The section lives between HTML comment markers and self-repairs on the next submit if
-the markup is hand-edited away.
+crediting the tool. The overview is a ledger, not a snapshot: entries are styled by status (🟢 open,
+🟣 merged, 🔴 closed, the latter two struck through), and merged or closed PRs stay listed even after
+their local branches are gone. `sync` (and therefore `merge`) refreshes the overview mid-loop, so the
+remaining PRs never show stale state. The section lives between HTML comment markers and self-repairs on
+the next update if the markup is hand-edited away.
+
+`submit` also links issues from branch names: a branch like `123-fix-thing` or `fix/issue-123` gets a
+`Closes #123` line in its PR/MR description, so the platform closes the issue when the review merges.
 
 Upgrading:
 
