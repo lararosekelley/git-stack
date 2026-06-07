@@ -990,6 +990,34 @@ esac
 }
 
 #[test]
+fn submit_ready_marks_draft_reviews_ready() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+    repo.git(["config", "stk.submitDraft", "true"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+
+    // Drafted by config, then flipped ready in one stack-wide pass.
+    repo.stack().args(["submit", "--stack"]).assert().success();
+    repo.stack()
+        .args(["submit", "--stack", "--ready"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("marked #1 ready"))
+        .stdout(predicates::str::contains("marked #2 ready"));
+
+    // Already ready: nothing left to mark.
+    repo.stack()
+        .args(["submit", "--stack", "--ready"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("marked").not());
+}
+
+#[test]
 fn bare_submit_uses_submit_stack_config() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);

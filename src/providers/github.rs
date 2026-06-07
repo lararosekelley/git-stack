@@ -1,7 +1,7 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use super::json::{
-    first_json_item, optional_string, parse_body_field, parse_state, required_string,
+    first_json_item, optional_bool, optional_string, parse_body_field, parse_state, required_string,
 };
 use super::{ReviewProvider, ReviewRequest, command_output};
 
@@ -59,6 +59,34 @@ impl ReviewProvider for GitHubProvider {
         }
         command_output("gh", &args)
     }
+
+    fn wait_for_checks(&self, review: &ReviewRequest) -> Result<bool> {
+        // Quick probe first: gh exits 0 when green, 8 while pending, and
+        // errors on a repo with no checks at all.
+        let probe = std::process::Command::new("gh")
+            .args(["pr", "checks", review.id_value()])
+            .output()
+            .context("failed to run gh")?;
+        match probe.status.code() {
+            Some(0) => return Ok(true),
+            Some(8) => {}
+            _ => {
+                let stderr = String::from_utf8_lossy(&probe.stderr);
+                return Ok(stderr.to_lowercase().contains("no checks"));
+            }
+        }
+
+        // Pending: hand the terminal to gh's live table until they settle.
+        let watched = std::process::Command::new("gh")
+            .args(["pr", "checks", review.id_value(), "--watch"])
+            .status()
+            .context("failed to run gh")?;
+        Ok(watched.success())
+    }
+
+    fn mark_ready(&self, review: &ReviewRequest) -> Result<String> {
+        command_output("gh", &["pr", "ready", review.id_value()])
+    }
 }
 
 fn list_review(branch: &str, state: Option<&str>) -> Result<Option<ReviewRequest>> {
@@ -66,7 +94,10 @@ fn list_review(branch: &str, state: Option<&str>) -> Result<Option<ReviewRequest
     if let Some(state) = state {
         args.extend(["--state", state]);
     }
-    args.extend(["--json", "number,state,baseRefName,headRefName,url,title"]);
+    args.extend([
+        "--json",
+        "number,state,baseRefName,headRefName,url,title,isDraft",
+    ]);
 
     let output = command_output("gh", &args)?;
     parse_github_review(&output)
@@ -84,6 +115,7 @@ fn parse_github_review(output: &str) -> Result<Option<ReviewRequest>> {
         state: parse_state(&required_string(&review, &["state"])?),
         url: required_string(&review, &["url"])?,
         title: optional_string(&review, "title"),
+        draft: optional_bool(&review, "isDraft"),
     }))
 }
 
@@ -109,6 +141,7 @@ mod tests {
                 state: ReviewState::Open,
                 url: "https://github.com/owner/repo/pull/12".to_owned(),
                 title: String::new(),
+                draft: false,
             }
         );
     }

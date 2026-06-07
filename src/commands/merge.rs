@@ -27,12 +27,27 @@ pub struct Merge {
     /// Repeat merge-and-sync bottom-up until the whole stack has landed.
     #[arg(long, action = ArgAction::SetTrue)]
     all: bool,
+    /// With --all: wait for each review's checks before merging it.
+    #[arg(long, action = ArgAction::SetTrue, requires = "all", conflicts_with = "no_wait")]
+    wait: bool,
+    /// With --all: do not wait for checks, overriding stk.mergeWait.
+    #[arg(long, action = ArgAction::SetTrue, requires = "all")]
+    no_wait: bool,
 }
 
 impl Run for Merge {
     fn run(self) -> Result<()> {
         if self.all {
-            merge_all(self.dry_run, self.yes)
+            // Waiting: --wait forces it on, --no-wait off; otherwise
+            // stk.mergeWait decides.
+            let wait = if self.wait {
+                true
+            } else if self.no_wait {
+                false
+            } else {
+                settings::bool_setting(settings::MERGE_WAIT_KEY)?
+            };
+            merge_all(self.dry_run, self.yes, wait)
         } else {
             merge(self.dry_run, self.yes, self.auto)
         }
@@ -82,8 +97,9 @@ fn merge(dry_run: bool, yes: bool, auto: bool) -> Result<()> {
 
 /// Land the whole stack: merge the bottom review and sync, bottom-up, until
 /// the stack is complete. One confirmation up front; a merge that only gets
-/// scheduled stops the loop.
-fn merge_all(dry_run: bool, yes: bool) -> Result<()> {
+/// scheduled stops the loop, and with `wait` each review's checks settle
+/// before its merge.
+fn merge_all(dry_run: bool, yes: bool, wait: bool) -> Result<()> {
     let Some(bottom) = bottom_branch()? else {
         bail!("no stacked branches to merge");
     };
@@ -105,6 +121,9 @@ fn merge_all(dry_run: bool, yes: bool) -> Result<()> {
     if dry_run {
         for branch in &branches {
             let review = open_review_for(review_provider.as_ref(), provider.kind, branch)?;
+            if wait {
+                println!("would wait for checks on {}", review.id);
+            }
             println!(
                 "would merge {} into {} ({strategy})",
                 review.label(),
@@ -134,6 +153,23 @@ fn merge_all(dry_run: bool, yes: bool) -> Result<()> {
             break;
         };
         let review = open_review_for(review_provider.as_ref(), provider.kind, &bottom)?;
+
+        // Each sync force-pushes the next branch and restarts its checks;
+        // waiting here is what turns the landing into one command.
+        if wait {
+            anstream::println!(
+                "waiting for checks on {} {}",
+                review.id,
+                style::dim("(ctrl-c is safe; rerun `git stk merge --all` to resume)")
+            );
+            if !review_provider.wait_for_checks(&review)? {
+                bail!(
+                    "checks failed for {}; fix them and rerun `git stk merge --all`",
+                    review.id
+                );
+            }
+        }
+
         match merge_and_check(review_provider.as_ref(), &review, &strategy, false)? {
             MergeOutcome::Merged => {
                 sync(false, PushMode::Config)?;

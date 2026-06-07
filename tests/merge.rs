@@ -383,6 +383,166 @@ esac
 }
 
 #[test]
+fn merge_all_wait_gates_each_merge_on_checks() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+
+    // Checks pending on the probe, green once watched; the merge follows.
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ checks\ 12\ --watch)
+    printf '%s\n' "$*" > watch-args.txt
+    exit 0
+    ;;
+  pr\ checks\ 12)
+    exit 8
+    ;;
+  pr\ merge\ 12*)
+    printf '%s\n' "$*" > merge-args.txt
+    ;;
+  *feature/a\ --state\ merged*)
+    if [ -f merge-args.txt ]; then
+      printf '[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
+    else
+      printf '[]\n'
+    fi
+    ;;
+  *feature/a*)
+    if [ -f merge-args.txt ]; then
+      printf '[]\n'
+    else
+      printf '[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
+    fi
+    ;;
+  pr\ edit*)
+    printf 'edited\n'
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["merge", "--all", "--wait", "-y"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("waiting for checks on #12"))
+        .stdout(predicates::str::contains("merged A work (#12)"))
+        .stdout(predicates::str::contains(
+            "merge complete: 1 of 1 review merged",
+        ));
+
+    let watched = fs::read_to_string(repo.path().join("watch-args.txt")).expect("watch args");
+    assert_eq!(watched.trim(), "pr checks 12 --watch");
+}
+
+#[test]
+fn merge_all_wait_stops_when_checks_fail() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    // The config default turns waiting on without the flag.
+    repo.git(["config", "stk.mergeWait", "true"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ checks\ 12)
+    echo 'X  lint  failing' >&2
+    exit 1
+    ;;
+  pr\ merge*)
+    touch merged.txt
+    ;;
+  *feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["merge", "--all", "-y"])
+        .env("PATH", path)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "checks failed for #12; fix them and rerun `git stk merge --all`",
+        ));
+    assert!(!repo.path().join("merged.txt").exists());
+}
+
+#[test]
+fn merge_all_no_wait_overrides_the_config() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["config", "stk.mergeWait", "true"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+
+    // No `pr checks` handler: a checks call would fall through and fail
+    // the wait, so success proves it never ran.
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ checks*)
+    echo "checks should not run" >&2
+    exit 1
+    ;;
+  pr\ merge\ 12*)
+    printf '%s\n' "$*" > merge-args.txt
+    ;;
+  *feature/a\ --state\ merged*)
+    if [ -f merge-args.txt ]; then
+      printf '[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
+    else
+      printf '[]\n'
+    fi
+    ;;
+  *feature/a*)
+    if [ -f merge-args.txt ]; then
+      printf '[]\n'
+    else
+      printf '[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
+    fi
+    ;;
+  pr\ edit*)
+    printf 'edited\n'
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["merge", "--all", "--no-wait", "-y"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("merged A work (#12)"));
+}
+
+#[test]
 fn merge_all_conflicts_with_auto() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);

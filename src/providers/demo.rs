@@ -110,6 +110,20 @@ impl ReviewProvider for DemoProvider {
         save(&state)?;
         Ok(format!("squashed {branch} into {base}"))
     }
+
+    fn wait_for_checks(&self, _review: &ReviewRequest) -> Result<bool> {
+        // The demo has no CI; checks are always green.
+        Ok(true)
+    }
+
+    fn mark_ready(&self, review: &ReviewRequest) -> Result<String> {
+        let mut state = load()?;
+        with_review(&mut state, review, |entry| {
+            entry["draft"] = json!(false);
+        })?;
+        save(&state)?;
+        Ok(String::new())
+    }
 }
 
 fn state_path() -> Result<PathBuf> {
@@ -183,5 +197,6 @@ fn review_from(entry: &Value) -> ReviewRequest {
         state,
         url: format!("demo://review/{id}"),
         title: entry["title"].as_str().unwrap_or_default().to_owned(),
+        draft: entry["draft"].as_bool().unwrap_or(false),
     }
 }
