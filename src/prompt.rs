@@ -14,3 +14,29 @@ pub fn confirm(prompt: &str) -> Result<bool> {
 
     Ok(matches!(answer.trim(), "y" | "Y" | "yes" | "Yes" | "YES"))
 }
+
+/// Number the options and read a 1-based choice from stdin. EOF or input
+/// that is not a valid number picks nothing, so non-interactive callers
+/// fall through to their error path.
+pub fn pick(title: &str, options: &[String]) -> Result<Option<usize>> {
+    anstream::eprintln!("{title}");
+    for (index, option) in options.iter().enumerate() {
+        let number = crate::style::paint(crate::style::DIM, &format!("{}.", index + 1));
+        anstream::eprintln!("  {number} {option}");
+    }
+    eprint!("pick [1-{}]: ", options.len());
+    io::stderr().flush().context("failed to flush stderr")?;
+
+    let mut answer = String::new();
+    io::stdin()
+        .lock()
+        .read_line(&mut answer)
+        .context("failed to read choice")?;
+
+    Ok(answer
+        .trim()
+        .parse::<usize>()
+        .ok()
+        .filter(|choice| (1..=options.len()).contains(choice))
+        .map(|choice| choice - 1))
+}

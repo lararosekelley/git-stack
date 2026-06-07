@@ -123,7 +123,7 @@ Branches without reviews degrade to plain names, so it works before submitting t
 Navigation and re-stacking:
 
 ```sh
-git stk up [branch]   # towards the top of the stack (children)
+git stk up [branch]   # towards the top of the stack (children; picker at forks)
 git stk down          # towards the trunk (parent)
 git stk top           # jump to the leaf of the stack
 git stk bottom        # jump to the branch just above the trunk

@@ -9,7 +9,18 @@ use super::{
     trunk_branch,
 };
 use crate::git;
+use crate::prompt;
 use crate::style;
+
+/// Offer a numbered pick of `children`; None when nothing was chosen
+/// (non-interactive stdin, or an invalid answer).
+fn pick_child(title: &str, children: &[String]) -> anyhow::Result<Option<String>> {
+    let painted: Vec<String> = children
+        .iter()
+        .map(|child| style::paint(style::BRANCH, child))
+        .collect();
+    Ok(prompt::pick(title, &painted)?.map(|index| children[index].clone()))
+}
 
 pub fn print_parent(branch: Option<&str>) -> Result<()> {
     let branch = branch
@@ -55,11 +66,13 @@ pub fn checkout_child(branch: Option<&str>) -> Result<()> {
         (None, [child]) => child.to_owned(),
         (None, []) => bail!("{current} has no stack children"),
         (None, _) => {
-            eprintln!("{current} has multiple stack children:");
-            for child in children {
-                eprintln!("  {child}");
+            match pick_child(
+                &format!("{current} has multiple stack children:"),
+                &children,
+            )? {
+                Some(child) => child,
+                None => bail!("choose one with `git stk up <branch>`"),
             }
-            bail!("choose one with `git stk up <branch>`");
         }
     };
 
@@ -76,13 +89,11 @@ pub fn checkout_top() -> Result<()> {
         match children.as_slice() {
             [] => break,
             [child] => top = child.clone(),
-            _ => {
-                eprintln!("{top} has multiple stack children:");
-                for child in children {
-                    eprintln!("  {child}");
-                }
-                bail!("walk up from {top} with `git stk up <branch>`");
-            }
+            // A pick resolves the fork and the climb continues from there.
+            _ => match pick_child(&format!("{top} has multiple stack children:"), &children)? {
+                Some(child) => top = child,
+                None => bail!("walk up from {top} with `git stk up <branch>`"),
+            },
         }
     }
 
@@ -108,11 +119,13 @@ pub fn checkout_bottom() -> Result<()> {
             [child] => child.clone(),
             [] => bail!("{current} has no stacked branches"),
             _ => {
-                eprintln!("{current} has multiple stack children:");
-                for child in children {
-                    eprintln!("  {child}");
+                match pick_child(
+                    &format!("{current} has multiple stack children:"),
+                    &children,
+                )? {
+                    Some(child) => child,
+                    None => bail!("choose one with `git stk up <branch>`"),
                 }
-                bail!("choose one with `git stk up <branch>`");
             }
         }
     } else {
