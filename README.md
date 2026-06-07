@@ -128,7 +128,7 @@ git stk merge [-y] [--dry-run]
 git stk repair [--dry-run]
 git stk submit [branch] [--dry-run] [--push | --no-push]
 git stk submit [--stack | --no-stack] [--dry-run] [--push | --no-push]
-git stk cleanup [branch] [--dry-run] [--delete-branch]
+git stk cleanup [branch] [--dry-run] [--keep-branch]
 ```
 
 `sync` is the merge-loop one-shot: it fetches the trunk (without leaving your branch), refreshes stack

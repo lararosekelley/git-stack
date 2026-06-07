@@ -1,4 +1,4 @@
-use anyhow::{Result, bail};
+use anyhow::Result;
 use clap::ArgAction;
 use clap_complete::engine::ArgValueCompleter;
 
@@ -7,7 +7,8 @@ use crate::completions;
 use crate::providers::{ReviewProvider, ReviewState, detect_provider, review_provider};
 use crate::{git, stack};
 
-/// Clean up local metadata for merged review requests.
+/// Clean up local metadata for merged review requests and delete their
+/// branches.
 #[derive(Debug, clap::Args)]
 pub struct Cleanup {
     #[arg(add = ArgValueCompleter::new(completions::branch_candidates))]
@@ -15,18 +16,18 @@ pub struct Cleanup {
     /// Print what would change without updating local metadata.
     #[arg(long, action = ArgAction::SetTrue)]
     dry_run: bool,
-    /// Delete cleaned merged branches after updating stack metadata.
+    /// Keep cleaned merged branches instead of deleting them.
     #[arg(long, action = ArgAction::SetTrue)]
-    delete_branch: bool,
+    keep_branch: bool,
 }
 
 impl Run for Cleanup {
     fn run(self) -> Result<()> {
-        cleanup(self.branch.as_deref(), self.dry_run, self.delete_branch)
+        cleanup(self.branch.as_deref(), self.dry_run, self.keep_branch)
     }
 }
 
-pub fn cleanup(branch: Option<&str>, dry_run: bool, delete_branch: bool) -> Result<()> {
+pub fn cleanup(branch: Option<&str>, dry_run: bool, keep_branch: bool) -> Result<()> {
     let branch = branch
         .map(str::to_owned)
         .map_or_else(git::current_branch, Ok)?;
@@ -51,7 +52,7 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool, delete_branch: bool) -> Resu
         }
 
         cleanup_merged_branch(review_provider.as_ref(), &branch, dry_run)?;
-        cleanup_branch_deletion(&branch, &current_branch, dry_run, delete_branch)?;
+        cleanup_branch_deletion(&branch, &current_branch, dry_run, !keep_branch)?;
         cleaned += 1;
     }
 
@@ -123,8 +124,11 @@ pub(crate) fn cleanup_branch_deletion(
         return Ok(());
     }
 
+    // The checked out branch cannot be deleted; keep it and let the user
+    // switch away instead of failing the rest of the cleanup.
     if branch == current_branch {
-        bail!("refusing to delete currently checked out branch {branch}");
+        println!("kept {branch}: cannot delete the checked out branch");
+        return Ok(());
     }
 
     println!(
