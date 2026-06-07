@@ -169,6 +169,82 @@ esac
 }
 
 #[test]
+fn status_surfaces_a_closed_review_with_a_hint() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/a\ --state\ closed*)
+    cat <<'JSON'
+[{"number":12,"state":"CLOSED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["status", "feature/a"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "review: #12 closed feature/a -> main",
+        ))
+        .stdout(predicates::str::contains(
+            "hint: review #12 was closed without merging - \
+             `git stk submit` opens a new review",
+        ));
+}
+
+#[test]
+fn status_hints_adopt_when_parent_review_closed() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/a\ --state\ closed*)
+    cat <<'JSON'
+[{"number":12,"state":"CLOSED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
+JSON
+    ;;
+  *feature/a*)
+    printf '[]\n'
+    ;;
+  *feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["status", "feature/b"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "hint: parent review #12 was closed without merging - \
+             retarget feature/b with `git stk adopt`",
+        ));
+}
+
+#[test]
 fn status_hints_sync_when_own_review_merged() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
@@ -620,10 +696,16 @@ esac
         .assert()
         .success()
         .stdout(predicates::str::contains(
-            "skipped feature/b: no github review found",
+            "skipped feature/b: review #13 was closed without merging",
         ))
         .stdout(predicates::str::contains("updated stack note in #12"))
         .stdout(predicates::str::contains("updated stack note in #13"));
+
+    // The closed review never drives metadata: the parent stays put.
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
+        "feature/a"
+    );
 
     let bottom = fs::read_to_string(repo.path().join("edit-body-12.txt")).expect("bottom body");
     assert!(bottom.contains(

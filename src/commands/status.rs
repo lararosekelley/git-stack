@@ -41,7 +41,9 @@ pub fn print_status(branch: Option<&str>) -> Result<()> {
     println!("provider: {} ({})", provider.kind, provider.source);
     let review_provider = review_provider(provider.kind);
 
-    let review = review_provider.review_for_branch(&branch)?;
+    // Closed-inclusive: a review closed without merging is part of the
+    // branch's story, not "no review".
+    let review = review_provider.review_for_branch_including_closed(&branch)?;
     match &review {
         Some(review) => {
             println!(
@@ -65,23 +67,38 @@ pub fn print_status(branch: Option<&str>) -> Result<()> {
     // Teach the loop: the next command, derived from review states and
     // local drift. A sync covers the restack, so the nudges don't stack.
     let mut hints = Vec::new();
-    if let Some(review) = &review
-        && review.state == ReviewState::Merged
-    {
-        hints.push(format!(
-            "review {} is merged - run `git stk sync`",
-            review.id
-        ));
+    match &review {
+        Some(review) if review.state == ReviewState::Merged => {
+            hints.push(format!(
+                "review {} is merged - run `git stk sync`",
+                review.id
+            ));
+        }
+        Some(review) if review.state == ReviewState::Closed => {
+            hints.push(format!(
+                "review {} was closed without merging - `git stk submit` opens a new review",
+                review.id
+            ));
+        }
+        _ => {}
     }
     if let Some(parent) = parent.as_deref() {
-        if let Ok(Some(parent_review)) = review_provider.review_for_branch(parent)
-            && parent_review.branch == parent
-            && parent_review.state == ReviewState::Merged
-        {
-            hints.push(format!(
-                "parent review {} is merged - run `git stk sync`",
-                parent_review.id
-            ));
+        match review_provider.review_for_branch_including_closed(parent) {
+            Ok(Some(parent_review)) if parent_review.branch == parent => {
+                match parent_review.state {
+                    ReviewState::Merged => hints.push(format!(
+                        "parent review {} is merged - run `git stk sync`",
+                        parent_review.id
+                    )),
+                    ReviewState::Closed => hints.push(format!(
+                        "parent review {} was closed without merging - \
+                         retarget {branch} with `git stk adopt`",
+                        parent_review.id
+                    )),
+                    _ => {}
+                }
+            }
+            _ => {}
         }
 
         if hints.is_empty()

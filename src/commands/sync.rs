@@ -66,7 +66,9 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
     let mut skipped = 0;
 
     for branch in &branches {
-        let Some(review) = review_provider.review_for_branch(branch)? else {
+        // Closed-inclusive so a review closed without merging gets a
+        // truthful skip instead of "no review found".
+        let Some(review) = review_provider.review_for_branch_including_closed(branch)? else {
             println!("skipped {branch}: no {} review found", provider.kind);
             skipped += 1;
             continue;
@@ -84,6 +86,17 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
         if review.state == ReviewState::Merged {
             println!("{branch}: review {} is merged", review.id);
             merged.push(branch.clone());
+            continue;
+        }
+
+        // A closed review's base is dead state: surface it, but never let
+        // it drive the stack metadata.
+        if review.state == ReviewState::Closed {
+            println!(
+                "skipped {branch}: review {} was closed without merging",
+                review.id
+            );
+            skipped += 1;
             continue;
         }
 

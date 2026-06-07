@@ -39,7 +39,10 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool, keep_branch: bool) -> Result
     let mut skipped = 0;
 
     for branch in branches {
-        let Some(review) = review_provider.review_for_branch(&branch)? else {
+        // Closed-inclusive so a review closed without merging gets a
+        // truthful skip instead of "no review found". Only merged reviews
+        // are ever cleaned: a closed review's work is not in the trunk.
+        let Some(review) = review_provider.review_for_branch_including_closed(&branch)? else {
             println!("skipped {branch}: no {} review found", provider.kind);
             skipped += 1;
             continue;
