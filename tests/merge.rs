@@ -1,3 +1,6 @@
+// These suites drive sh-script provider fakes, so they are Unix-only.
+#![cfg(unix)]
+
 use std::fs;
 
 use common::TestRepo;

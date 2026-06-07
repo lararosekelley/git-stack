@@ -40,6 +40,7 @@ fn completions_rejects_unknown_shell() {
 }
 
 #[test]
+#[cfg(unix)] // drives a bash completion harness
 fn completions_bash_shim_completes_git_stk_subcommands() {
     let repo = TestRepo::new();
 
@@ -72,6 +73,7 @@ printf '%s\n' "${{COMPREPLY[@]}}"
 }
 
 #[test]
+#[cfg(unix)] // drives a bash completion harness
 fn completions_complete_flags_for_subcommands() {
     let repo = TestRepo::new();
 
@@ -83,6 +85,7 @@ fn completions_complete_flags_for_subcommands() {
 }
 
 #[test]
+#[cfg(unix)] // drives a bash completion harness
 fn completions_complete_only_children_for_up() {
     let repo = TestRepo::new();
 
@@ -108,6 +111,7 @@ fn completions_complete_only_children_for_up() {
 }
 
 #[test]
+#[cfg(unix)] // drives a bash completion harness
 fn completions_complete_branch_names_with_prefix() {
     let repo = TestRepo::new();
 

@@ -313,6 +313,7 @@ fn continue_resumes_restack_after_conflict_resolution() {
 }
 
 #[test]
+#[cfg(unix)] // drives an sh-script provider fake
 fn restack_after_squash_merge_replays_only_child_commits() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
