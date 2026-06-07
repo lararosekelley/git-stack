@@ -109,7 +109,9 @@ pub fn submit(
         )?);
     }
 
-    // After every review exists, write the stack overview into each body.
+    // After every review exists, link any issue the branch name references,
+    // then (in stack mode) write the stack overview into each body.
+    crate::notes::update_closes_notes(review_provider.as_ref(), &branches, dry_run)?;
     if submit_stack {
         crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run)?;
     }
