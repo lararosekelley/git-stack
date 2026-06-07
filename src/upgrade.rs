@@ -66,6 +66,8 @@ pub fn maybe_hint_update() {
 fn update_check_path() -> Option<PathBuf> {
     let base = env::var_os("XDG_CONFIG_HOME")
         .map(PathBuf::from)
+        // Windows has no HOME; %LOCALAPPDATA% is the home for app state.
+        .or_else(|| env::var_os("LOCALAPPDATA").map(PathBuf::from))
         .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".config")))?;
     Some(base.join("git-stk").join(UPDATE_CHECK_FILE))
 }
