@@ -1,6 +1,7 @@
 mod common;
 
 use common::TestRepo;
+use predicates::prelude::PredicateBooleanExt;
 
 #[test]
 fn cleanup_retargets_children_and_detaches_merged_branch() {
@@ -123,7 +124,7 @@ esac
 }
 
 #[test]
-fn cleanup_delete_branch_removes_cleaned_merged_branch() {
+fn cleanup_deletes_cleaned_merged_branch_by_default() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
@@ -164,7 +165,7 @@ esac
     );
 
     repo.stack()
-        .args(["cleanup", "--delete-branch", "feature/a"])
+        .args(["cleanup", "feature/a"])
         .env("PATH", path)
         .assert()
         .success()
@@ -185,7 +186,7 @@ esac
 }
 
 #[test]
-fn cleanup_delete_branch_dry_run_keeps_branch() {
+fn cleanup_dry_run_keeps_branch() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
@@ -207,7 +208,7 @@ esac
     );
 
     repo.stack()
-        .args(["cleanup", "--dry-run", "--delete-branch", "feature/a"])
+        .args(["cleanup", "--dry-run", "feature/a"])
         .env("PATH", path)
         .assert()
         .success()
@@ -224,7 +225,7 @@ esac
 }
 
 #[test]
-fn cleanup_delete_branch_refuses_current_branch() {
+fn cleanup_keeps_the_checked_out_branch() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
@@ -245,16 +246,61 @@ esac
     );
 
     repo.stack()
-        .args(["cleanup", "--delete-branch", "feature/a"])
+        .args(["cleanup", "feature/a"])
         .env("PATH", path)
         .assert()
-        .failure()
-        .stderr(predicates::str::contains(
-            "refusing to delete currently checked out branch feature/a",
+        .success()
+        .stdout(predicates::str::contains(
+            "kept feature/a: cannot delete the checked out branch",
+        ))
+        .stdout(predicates::str::contains(
+            "cleanup complete: 1 cleaned, 0 skipped",
         ));
 
     assert!(
         repo.git(["branch", "--list", "feature/a"])
             .contains("feature/a")
+    );
+}
+
+#[test]
+fn cleanup_keep_branch_keeps_cleaned_merged_branch() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.git(["switch", "main"]);
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *--state\ merged*)
+    cat <<'JSON'
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["cleanup", "--keep-branch", "feature/a"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("will detach feature/a"))
+        .stdout(predicates::str::contains("delete").not());
+
+    assert!(
+        repo.git(["branch", "--list", "feature/a"])
+            .contains("feature/a")
+    );
+    assert_eq!(
+        repo.git_status(["config", "--get", "branch.feature/a.stkParent"])
+            .status
+            .code(),
+        Some(1)
     );
 }
