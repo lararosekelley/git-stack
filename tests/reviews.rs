@@ -3,6 +3,7 @@ use std::fs;
 mod common;
 
 use common::TestRepo;
+use predicates::prelude::PredicateBooleanExt;
 
 #[test]
 fn status_prints_local_stack_and_review_state() {
@@ -85,7 +86,116 @@ JSON
             "review: !34 open feature/b -> main",
         ))
         .stdout(predicates::str::contains(
-            "warning: review base is main, local parent is feature/a",
+            "warning: review base is main, local parent is feature/a - run `git stk submit`",
+        ));
+}
+
+#[test]
+fn status_hints_restack_when_behind_parent() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a.txt", "a\nmore\n", "a moves on");
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["status", "feature/b"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "hint: feature/b is 1 commit behind feature/a - run `git stk restack`",
+        ));
+}
+
+#[test]
+fn status_hints_sync_when_parent_review_merged() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a.txt", "a\nmore\n", "a moves on");
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/a\ --state\ merged*)
+    cat <<'JSON'
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
+JSON
+    ;;
+  *feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    // The sync covers the restack, so only the sync hint shows even though
+    // the branch is also behind its parent.
+    repo.stack()
+        .args(["status", "feature/b"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "hint: parent review #12 is merged - run `git stk sync`",
+        ))
+        .stdout(predicates::str::contains("restack").not());
+}
+
+#[test]
+fn status_hints_sync_when_own_review_merged() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/a\ --state\ merged*)
+    cat <<'JSON'
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["status", "feature/a"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "hint: review #12 is merged - run `git stk sync`",
         ));
 }
 

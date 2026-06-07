@@ -115,6 +115,18 @@ pub fn remote_default_branch(remote: &str) -> Option<String> {
     full.strip_prefix(&format!("{remote}/")).map(str::to_owned)
 }
 
+/// How many commits `parent` has that `branch` does not: nonzero means the
+/// branch needs a restack.
+pub fn commits_behind(branch: &str, parent: &str) -> Result<usize> {
+    let range = format!("{branch}..{parent}");
+    let count = output(&["rev-list", "--count", &range])
+        .with_context(|| format!("failed to count commits in {range}"))?;
+    count
+        .trim()
+        .parse()
+        .context("failed to parse rev-list count")
+}
+
 pub fn merge_base(a: &str, b: &str) -> Result<String> {
     output(&["merge-base", a, b])
         .with_context(|| format!("failed to find merge base of {a} and {b}"))

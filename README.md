@@ -98,6 +98,10 @@ warns when an open review still heads the old branch (platforms do not follow lo
 main (trunk)
 ```
 
+`status` and `list` append `hint:` lines pointing at the next command when there is one: `restack` when a
+branch is behind its parent, `submit` when a review base went stale, `sync` when a review in the stack
+merged.
+
 `list --markdown` prints a shareable summary instead - a status line and the PRs in merge order with
 links and states, ready to paste into Slack or a tracking issue:
 

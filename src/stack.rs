@@ -171,7 +171,27 @@ pub fn print_stack() -> Result<()> {
     for line in lines.iter().rev() {
         println!("{line}");
     }
+
+    for branch in branch_and_descendants(&root)? {
+        if let Some(parent) = parents.get(&branch)
+            && let Some(hint) = behind_parent_hint(&branch, parent)
+        {
+            println!("hint: {hint}");
+        }
+    }
     Ok(())
+}
+
+/// A restack nudge when `branch` is missing commits from its parent's tip.
+/// Local-only; a missing parent yields nothing.
+pub fn behind_parent_hint(branch: &str, parent: &str) -> Option<String> {
+    let behind = git::commits_behind(branch, parent)
+        .ok()
+        .filter(|count| *count > 0)?;
+    Some(format!(
+        "{branch} is {behind} commit{} behind {parent} - run `git stk restack`",
+        if behind == 1 { "" } else { "s" }
+    ))
 }
 
 /// The trunk branch: the remote's default branch when known locally,
