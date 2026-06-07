@@ -16,8 +16,9 @@ pub fn setup(yes: bool, refresh: bool) -> Result<()> {
         // Re-render assets that can go stale across versions. Non-interactive;
         // run by `upgrade` via the newly installed binary. Completion wiring is
         // left alone because the rc line re-sources from the binary on every
-        // shell start.
-        return install_man_page();
+        // shell start; missing wiring gets a hint instead of a prompt.
+        install_man_page()?;
+        return print_completion_hint();
     }
 
     install_man_page()?;
@@ -101,7 +102,32 @@ fn wire_completions(yes: bool) -> Result<()> {
     Ok(())
 }
 
-/// Resolve (shell name, rc file, completion line) from $SHELL.
+/// Point at `git stk setup` when the detected shell has no completion
+/// wiring yet. Used after upgrades, where prompting is not an option.
+fn print_completion_hint() -> Result<()> {
+    let Some((shell, rc_path, line)) = completion_target()? else {
+        return Ok(());
+    };
+
+    let configured = fs::read_to_string(&rc_path)
+        .map(|rc| rc.contains(COMPLETION_MARKER) || rc.contains("git stk completions"))
+        .unwrap_or(false);
+    if configured {
+        return Ok(());
+    }
+
+    println!(
+        "{shell} completions are not configured; run `git stk setup`, \
+         or add this to {}:",
+        rc_path.display()
+    );
+    println!("  {line}");
+    Ok(())
+}
+
+/// Resolve (shell name, rc file, completion line) from $SHELL. The lines
+/// guard on the binary existing so a removed git-stk never breaks shell
+/// startup.
 fn completion_target() -> Result<Option<(&'static str, PathBuf, &'static str)>> {
     let shell = env::var("SHELL").unwrap_or_default();
     let shell = shell.rsplit('/').next().unwrap_or_default();
@@ -114,17 +140,17 @@ fn completion_target() -> Result<Option<(&'static str, PathBuf, &'static str)>> 
         "bash" => Some((
             "bash",
             home.join(".bashrc"),
-            "source <(git stk completions bash)",
+            "command -v git-stk >/dev/null && source <(git stk completions bash)",
         )),
         "zsh" => Some((
             "zsh",
             home.join(".zshrc"),
-            "source <(git stk completions zsh)",
+            "command -v git-stk >/dev/null && source <(git stk completions zsh)",
         )),
         "fish" => Some((
             "fish",
             home.join(".config/fish/config.fish"),
-            "git stk completions fish | source",
+            "command -q git-stk; and git stk completions fish | source",
         )),
         _ => None,
     };
