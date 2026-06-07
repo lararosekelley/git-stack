@@ -111,7 +111,8 @@ esac
         .stdout(predicates::str::contains(
             "would update review feature/b -> main (#13)",
         ))
-        .stdout(predicates::str::contains("would detach feature/a"));
+        .stdout(predicates::str::contains("would detach feature/a"))
+        .stdout(predicates::str::contains("would update stack note in #12"));
 
     assert_eq!(
         repo.git(["config", "--get", "branch.feature/a.stkParent"]),
@@ -120,6 +121,75 @@ esac
     assert_eq!(
         repo.git(["config", "--get", "branch.feature/b.stkParent"]),
         "feature/a"
+    );
+}
+
+#[test]
+fn cleanup_refreshes_the_stack_overview_ledger() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.git(["switch", "main"]);
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ view\ 12*)
+    printf '{"body":""}\n'
+    ;;
+  pr\ view\ 13*)
+    printf '{"body":""}\n'
+    ;;
+  pr\ edit\ 12\ --body*)
+    printf '%s\n' "$*" > edit-body-12.txt
+    ;;
+  pr\ edit\ 13\ --body*)
+    printf '%s\n' "$*" > edit-body-13.txt
+    ;;
+  *feature/a\ --state\ merged*)
+    cat <<'JSON'
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
+JSON
+    ;;
+  *feature/a*)
+    printf '[]\n'
+    ;;
+  *feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]
+JSON
+    ;;
+  pr\ edit*)
+    printf 'edited\n'
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["cleanup", "feature/a"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("updated stack note in #12"))
+        .stdout(predicates::str::contains("updated stack note in #13"))
+        .stdout(predicates::str::contains("will delete branch feature/a"));
+
+    // The overview was refreshed before the merged branch vanished: its
+    // entry is restyled in the survivor, not dropped.
+    let survivor =
+        std::fs::read_to_string(repo.path().join("edit-body-13.txt")).expect("survivor body");
+    assert!(survivor.contains(
+        "- \u{1F7E3} ~~[A work (#12)](https://github.com/owner/repo/pull/12)~~ (merged)"
+    ));
+    assert!(
+        survivor.contains(
+            "- \u{1F7E2} [B work (#13)](https://github.com/owner/repo/pull/13) \u{1F448}"
+        )
     );
 }
 
