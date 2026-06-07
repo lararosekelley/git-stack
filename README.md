@@ -84,7 +84,11 @@ git stk children [branch]
 git stk list [--markdown]
 git stk adopt <branch> --parent <parent>
 git stk detach [branch]
+git stk rename [branch] <new-name>
 ```
+
+`rename` is `git branch -m` plus stack upkeep: children pointing at the old name are retargeted, and it
+warns when an open review still heads the old branch (platforms do not follow local renames).
 
 `list` prints the stack leaf-first, like a pile sitting on its base, with the trunk labeled:
 
@@ -198,7 +202,7 @@ Everything is optional; defaults shown below:
 ```
 
 The tool also manages per-branch metadata: `branch.<name>.stkParent` (the stack parent) and
-`branch.<name>.stkBase` (the recorded fork point). These are written by `new`, `adopt`, `sync`, `restack`,
+`branch.<name>.stkBase` (the recorded fork point). These are written by `new`, `adopt`, `rename`, `sync`, `restack`,
 `cleanup`, and `repair`; you normally never touch them by hand.
 
 Branches are the real state; the metadata is just annotation. If it is ever lost or stale, `git stk repair`

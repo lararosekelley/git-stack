@@ -22,6 +22,7 @@ pub enum Command {
     Status(commands::status::Status),
     Adopt(commands::adopt::Adopt),
     Detach(commands::detach::Detach),
+    Rename(commands::rename::Rename),
     Restack(commands::restack::Restack),
     Continue(commands::restack::Continue),
     Abort(commands::restack::Abort),

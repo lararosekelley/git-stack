@@ -21,6 +21,7 @@ fn main() -> Result<()> {
         Command::Status(command) => command.run(),
         Command::Adopt(command) => command.run(),
         Command::Detach(command) => command.run(),
+        Command::Rename(command) => command.run(),
         Command::Restack(command) => command.run(),
         Command::Continue(command) => command.run(),
         Command::Abort(command) => command.run(),

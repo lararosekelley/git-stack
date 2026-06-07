@@ -147,6 +147,21 @@ pub fn detach_branch(branch: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+/// Rename a branch and keep the stack intact. Git moves the branch's own
+/// metadata with the rename; children pointing at the old name are
+/// retargeted here.
+pub fn rename_branch(old: &str, new: &str) -> Result<()> {
+    let children = children_for_branch(old)?;
+    git::rename_branch(old, new)?;
+    println!("renamed {old} -> {new}");
+
+    for child in &children {
+        set_parent_for_branch(child, new)?;
+        println!("retargeted {child} -> {new}");
+    }
+    Ok(())
+}
+
 pub fn restack(update_refs_mode: UpdateRefsMode, push_mode: PushMode) -> Result<()> {
     let current = git::current_branch()?;
     let parents = parent_map()?;
