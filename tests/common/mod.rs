@@ -161,6 +161,8 @@ impl TestRepo {
     /// Run the bash completion harness: source the registration script, set
     /// up COMP_WORDS for `git stk <words...><TAB>`, invoke the _git_stk shim,
     /// and return COMPREPLY entries.
+    /// Unix-only: completion assertions run through a bash harness.
+    #[cfg(unix)]
     pub fn complete_git_stk(&self, words: &[&str]) -> String {
         let output = self.stack_output(["completions", "bash"]).stdout;
         let script_path = self.path().join("completions.bash");
