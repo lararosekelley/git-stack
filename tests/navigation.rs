@@ -345,4 +345,13 @@ fn list_colors_only_when_the_terminal_wants_it() {
         .assert()
         .success()
         .stdout(predicates::str::contains("\u{1b}["));
+
+    // The swept commands speak the style layer too.
+    repo.stack()
+        .args(["new", "feature/b"])
+        .env("CLICOLOR_FORCE", "1")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("\u{1b}["))
+        .stdout(predicates::str::contains("created"));
 }

@@ -150,7 +150,10 @@ fn upgrade_to_latest_release(force: bool) -> Result<()> {
                 .old_version
                 .map(|version| version.to_string())
                 .unwrap_or_else(|| "unknown".to_owned());
-            println!("upgraded git-stk {old} -> {}", result.new_version);
+            anstream::println!(
+                "{}",
+                crate::style::success(&format!("upgraded git-stk {old} -> {}", result.new_version))
+            );
             refresh_assets_with_new_binary();
         }
         None => println!(

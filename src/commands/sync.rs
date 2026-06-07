@@ -6,6 +6,7 @@ use crate::commands::Run;
 use crate::commands::cleanup::{cleanup_branch_deletion, cleanup_merged_branch};
 use crate::providers::{ReviewState, detect_provider, review_provider};
 use crate::settings;
+use crate::style;
 use crate::{git, stack};
 
 /// Sync the stack with remote state: fetch the trunk, refresh metadata from
@@ -69,22 +70,36 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
         // Closed-inclusive so a review closed without merging gets a
         // truthful skip instead of "no review found".
         let Some(review) = review_provider.review_for_branch_including_closed(branch)? else {
-            println!("skipped {branch}: no {} review found", provider.kind);
+            anstream::println!(
+                "{}",
+                style::dim(&format!(
+                    "skipped {branch}: no {} review found",
+                    provider.kind
+                ))
+            );
             skipped += 1;
             continue;
         };
 
         if review.branch != *branch {
-            println!(
-                "skipped {branch}: {} review belongs to {}",
-                provider.kind, review.branch
+            anstream::println!(
+                "{}",
+                style::dim(&format!(
+                    "skipped {branch}: {} review belongs to {}",
+                    provider.kind, review.branch
+                ))
             );
             skipped += 1;
             continue;
         }
 
         if review.state == ReviewState::Merged {
-            println!("{branch}: review {} is merged", review.id);
+            anstream::println!(
+                "{}: review {} is {}",
+                style::branch(branch),
+                review.id,
+                style::state(&review.state)
+            );
             merged.push(branch.clone());
             continue;
         }
@@ -92,9 +107,12 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
         // A closed review's base is dead state: surface it, but never let
         // it drive the stack metadata.
         if review.state == ReviewState::Closed {
-            println!(
-                "skipped {branch}: review {} was closed without merging",
-                review.id
+            anstream::println!(
+                "{}",
+                style::dim(&format!(
+                    "skipped {branch}: review {} was closed without merging",
+                    review.id
+                ))
             );
             skipped += 1;
             continue;
@@ -108,19 +126,22 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
             stack::set_parent_for_branch(branch, &review.base)?;
             stack::record_base(branch, &review.base);
         }
-        println!(
-            "{} {} -> {} ({})",
+        anstream::println!(
+            "{} {} -> {} {}",
             if dry_run { "would sync" } else { "synced" },
-            review.branch,
-            review.base,
-            review.id
+            style::branch(&review.branch),
+            style::branch(&review.base),
+            style::dim(&format!("({})", review.id))
         );
         synced += 1;
     }
 
-    println!(
-        "sync complete: {synced} {}synced, {skipped} skipped",
-        if dry_run { "would be " } else { "" }
+    anstream::println!(
+        "{}",
+        style::success(&format!(
+            "sync complete: {synced} {}synced, {skipped} skipped",
+            if dry_run { "would be " } else { "" }
+        ))
     );
 
     // 4. Refresh the stack overview ledger in every review body while the
@@ -145,7 +166,7 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
             .or_else(|| trunk.clone())
             .unwrap_or(root.clone());
         if dry_run {
-            println!("would switch to {target}");
+            anstream::println!("would switch to {}", style::branch(&target));
         } else {
             git::checkout(&target)?;
         }
@@ -168,12 +189,24 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
     // 8. Where to look next.
     match survivors.first() {
         Some(bottom) => match review_provider.review_for_branch(bottom)? {
-            Some(review) => println!("next up: {bottom} -> {} {}", review.id, review.url),
-            None => println!("next up: {bottom} (no review yet)"),
+            Some(review) => anstream::println!(
+                "next up: {} -> {} {}",
+                style::branch(bottom),
+                review.id,
+                style::dim(&review.url)
+            ),
+            None => anstream::println!(
+                "next up: {} {}",
+                style::branch(bottom),
+                style::dim("(no review yet)")
+            ),
         },
         None => {
             let base = trunk.unwrap_or(root);
-            println!("stack complete: everything merged into {base}");
+            anstream::println!(
+                "{}",
+                style::success(&format!("stack complete: everything merged into {base}"))
+            );
         }
     }
 

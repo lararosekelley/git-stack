@@ -7,6 +7,7 @@ use crate::commands::Run;
 use crate::completions;
 use crate::providers::{ReviewProvider, detect_provider, review_provider};
 use crate::settings;
+use crate::style;
 use crate::{git, stack};
 
 /// Create or update a remote review request for a branch.
@@ -97,10 +98,13 @@ pub fn submit(
     if push {
         let remote = settings::remote()?;
         if dry_run {
-            println!("would push {} to {remote}", branches.join(" "));
+            anstream::println!(
+                "would push {} to {remote}",
+                style::branch(&branches.join(" "))
+            );
         } else {
             git::push_set_upstream_force_with_lease(&remote, &branches)?;
-            println!("pushed {} to {remote}", branches.join(" "));
+            anstream::println!("pushed {} to {remote}", style::branch(&branches.join(" ")));
         }
     }
 
@@ -133,9 +137,12 @@ pub fn submit(
         crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run)?;
     }
 
-    println!(
-        "submit complete: {} created, {} updated, {} skipped",
-        summary.created, summary.updated, summary.skipped
+    anstream::println!(
+        "{}",
+        style::success(&format!(
+            "submit complete: {} created, {} updated, {} skipped",
+            summary.created, summary.updated, summary.skipped
+        ))
     );
     Ok(())
 }
@@ -165,9 +172,12 @@ fn submit_branch(
                     review.branch, review.base, review.id
                 );
             } else {
-                println!(
-                    "{} already targets {} ({})",
-                    review.branch, review.base, review.id
+                anstream::println!(
+                    "{}",
+                    style::dim(&format!(
+                        "{} already targets {} ({})",
+                        review.branch, review.base, review.id
+                    ))
                 );
             }
             return Ok(SubmitAction::Skipped);
@@ -178,12 +188,12 @@ fn submit_branch(
         } else {
             review_provider.update_review_base(&review, parent)?
         };
-        println!(
-            "{} {} -> {} ({})",
+        anstream::println!(
+            "{} {} -> {} {}",
             if dry_run { "would update" } else { "updated" },
-            review.branch,
-            parent,
-            review.id
+            style::branch(&review.branch),
+            style::branch(parent),
+            style::dim(&format!("({})", review.id))
         );
         if !output.is_empty() {
             println!("{output}");
@@ -194,9 +204,11 @@ fn submit_branch(
         } else {
             review_provider.create_review(branch, parent)?
         };
-        println!(
-            "{} {branch} -> {parent}",
-            if dry_run { "would create" } else { "created" }
+        anstream::println!(
+            "{} {} -> {}",
+            if dry_run { "would create" } else { "created" },
+            style::branch(branch),
+            style::branch(parent)
         );
         if !output.is_empty() {
             println!("{output}");

@@ -2,6 +2,7 @@ use anyhow::Result;
 
 use crate::commands::Run;
 use crate::providers::detect_provider;
+use crate::style;
 
 /// Print detected review provider.
 #[derive(Debug, clap::Args)]
@@ -15,6 +16,10 @@ impl Run for Provider {
 
 pub fn print_provider() -> Result<()> {
     let provider = detect_provider()?;
-    println!("{} ({})", provider.kind, provider.source);
+    anstream::println!(
+        "{} {}",
+        provider.kind,
+        style::dim(&format!("({})", provider.source))
+    );
     Ok(())
 }

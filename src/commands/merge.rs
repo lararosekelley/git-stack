@@ -9,6 +9,7 @@ use crate::providers::{ProviderKind, ReviewProvider, ReviewRequest, ReviewState}
 use crate::providers::{detect_provider, review_provider};
 use crate::settings;
 use crate::stack;
+use crate::style;
 
 /// Merge the review at the bottom of the stack, then sync.
 #[derive(Debug, clap::Args)]
@@ -142,9 +143,12 @@ fn merge_all(dry_run: bool, yes: bool) -> Result<()> {
         }
     }
 
-    println!(
-        "merge complete: {landed} of {count} review{} merged",
-        if count == 1 { "" } else { "s" }
+    anstream::println!(
+        "{}",
+        style::success(&format!(
+            "merge complete: {landed} of {count} review{} merged",
+            if count == 1 { "" } else { "s" }
+        ))
     );
     Ok(())
 }
@@ -216,9 +220,10 @@ fn merge_and_check(
             // gh refuses outright when required checks are not green.
             let text = error.to_string().to_lowercase();
             if text.contains("status check") || text.contains("not mergeable") {
-                eprintln!(
-                    "hint: required checks may not be green yet - rerun `git stk merge` \
-                     when they pass, or schedule with `git stk merge --auto`"
+                anstream::eprintln!(
+                    "{} required checks may not be green yet - rerun `git stk merge` \
+                     when they pass, or schedule with `git stk merge --auto`",
+                    style::hint_prefix()
                 );
             }
             return Err(error);
@@ -230,11 +235,16 @@ fn merge_and_check(
 
     match review_provider.review_for_branch(&review.branch)? {
         Some(after) if after.state == ReviewState::Merged => {
-            println!("merged {label}");
+            anstream::println!("{}", style::success(&format!("merged {label}")));
             Ok(MergeOutcome::Merged)
         }
         _ => {
-            println!("merge scheduled for {label}; rerun `git stk sync` once checks pass");
+            anstream::println!(
+                "{}",
+                style::warn(&format!(
+                    "merge scheduled for {label}; rerun `git stk sync` once checks pass"
+                ))
+            );
             Ok(MergeOutcome::Scheduled)
         }
     }

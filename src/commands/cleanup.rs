@@ -5,6 +5,7 @@ use clap_complete::engine::ArgValueCompleter;
 use crate::commands::Run;
 use crate::completions;
 use crate::providers::{ReviewProvider, ReviewState, detect_provider, review_provider};
+use crate::style;
 use crate::{git, stack};
 
 /// Clean up local metadata for merged review requests and delete their
@@ -53,13 +54,25 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool, keep_branch: bool) -> Result
         // truthful skip instead of "no review found". Only merged reviews
         // are ever cleaned: a closed review's work is not in the trunk.
         let Some(review) = review_provider.review_for_branch_including_closed(&branch)? else {
-            println!("skipped {branch}: no {} review found", provider.kind);
+            anstream::println!(
+                "{}",
+                style::dim(&format!(
+                    "skipped {branch}: no {} review found",
+                    provider.kind
+                ))
+            );
             skipped += 1;
             continue;
         };
 
         if review.state != ReviewState::Merged {
-            println!("skipped {branch}: review {} is {}", review.id, review.state);
+            anstream::println!(
+                "{}",
+                style::dim(&format!(
+                    "skipped {branch}: review {} is {}",
+                    review.id, review.state
+                ))
+            );
             skipped += 1;
             continue;
         }
@@ -74,7 +87,12 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool, keep_branch: bool) -> Result
     } else {
         String::new()
     };
-    println!("cleanup complete: {cleaned} cleaned, {skipped} skipped{retargeted_note}");
+    anstream::println!(
+        "{}",
+        style::success(&format!(
+            "cleanup complete: {cleaned} cleaned, {skipped} skipped{retargeted_note}"
+        ))
+    );
     Ok(())
 }
 
@@ -108,14 +126,18 @@ fn recover_deleted_parent(
         return Ok(0);
     }
 
-    println!(
-        "{branch}: parent {parent} is gone, but review {} merged into {}",
-        review.id, review.base
+    anstream::println!(
+        "{}: parent {} is gone, but review {} merged into {}",
+        style::branch(branch),
+        style::branch(&parent),
+        review.id,
+        style::branch(&review.base)
     );
-    println!(
-        "{} retarget {branch} -> {}",
+    anstream::println!(
+        "{} retarget {} -> {}",
         if dry_run { "would" } else { "will" },
-        review.base
+        style::branch(branch),
+        style::branch(&review.base)
     );
     update_child_review_base(review_provider, branch, &review.base, dry_run)?;
     if !dry_run {
@@ -144,9 +166,11 @@ pub(crate) fn cleanup_merged_branch(
     for child in direct_children {
         match parent.as_deref() {
             Some(parent) => {
-                println!(
-                    "{} retarget {child} -> {parent}",
-                    if dry_run { "would" } else { "will" }
+                anstream::println!(
+                    "{} retarget {} -> {}",
+                    if dry_run { "would" } else { "will" },
+                    style::branch(&child),
+                    style::branch(parent)
                 );
                 update_child_review_base(review_provider, &child, parent, dry_run)?;
                 if !dry_run {
@@ -160,7 +184,11 @@ pub(crate) fn cleanup_merged_branch(
                 }
             }
             None => {
-                println!("{} detach {child}", if dry_run { "would" } else { "will" });
+                anstream::println!(
+                    "{} detach {}",
+                    if dry_run { "would" } else { "will" },
+                    style::branch(&child)
+                );
                 if !dry_run {
                     stack::unset_parent_for_branch(&child)?;
                     stack::unset_base_for_branch(&child)?;
@@ -169,7 +197,11 @@ pub(crate) fn cleanup_merged_branch(
         }
     }
 
-    println!("{} detach {branch}", if dry_run { "would" } else { "will" });
+    anstream::println!(
+        "{} detach {}",
+        if dry_run { "would" } else { "will" },
+        style::branch(branch)
+    );
     if !dry_run {
         stack::unset_parent_for_branch(branch)?;
         stack::unset_base_for_branch(branch)?;
@@ -191,13 +223,19 @@ pub(crate) fn cleanup_branch_deletion(
     // The checked out branch cannot be deleted; keep it and let the user
     // switch away instead of failing the rest of the cleanup.
     if branch == current_branch {
-        println!("kept {branch}: cannot delete the checked out branch");
+        anstream::println!(
+            "{}",
+            style::dim(&format!(
+                "kept {branch}: cannot delete the checked out branch"
+            ))
+        );
         return Ok(());
     }
 
-    println!(
-        "{} delete branch {branch}",
-        if dry_run { "would" } else { "will" }
+    anstream::println!(
+        "{} delete branch {}",
+        if dry_run { "would" } else { "will" },
+        style::branch(branch)
     );
     if !dry_run {
         git::delete_branch(branch)?;
@@ -220,12 +258,12 @@ fn update_child_review_base(
         return Ok(());
     }
 
-    println!(
-        "{} update review {} -> {} ({})",
+    anstream::println!(
+        "{} update review {} -> {} {}",
         if dry_run { "would" } else { "will" },
-        review.branch,
-        parent,
-        review.id
+        style::branch(&review.branch),
+        style::branch(parent),
+        style::dim(&format!("({})", review.id))
     );
     if !dry_run {
         let output = review_provider.update_review_base(&review, parent)?;

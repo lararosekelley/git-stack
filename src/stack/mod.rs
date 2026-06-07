@@ -8,6 +8,7 @@ use anyhow::{Result, bail};
 
 use crate::git;
 use crate::settings;
+use crate::style;
 
 mod nav;
 mod restack;
@@ -26,7 +27,11 @@ pub fn create_branch(branch: &str) -> Result<()> {
     git::create_branch(branch)?;
     set_parent(branch, &parent)?;
     record_base(branch, &parent);
-    println!("created {branch} with parent {parent}");
+    anstream::println!(
+        "created {} with parent {}",
+        style::branch(branch),
+        style::branch(&parent)
+    );
     Ok(())
 }
 
@@ -59,7 +64,11 @@ pub fn adopt_branch(branch: &str, parent: &str) -> Result<()> {
 
     set_parent(branch, parent)?;
     record_base(branch, parent);
-    println!("attached {branch} to {parent}");
+    anstream::println!(
+        "attached {} to {}",
+        style::branch(branch),
+        style::branch(parent)
+    );
     Ok(())
 }
 
@@ -69,7 +78,7 @@ pub fn detach_branch(branch: Option<&str>) -> Result<()> {
         .map_or_else(git::current_branch, Ok)?;
     unset_parent(&branch)?;
     unset_base(&branch)?;
-    println!("detached {branch}");
+    anstream::println!("detached {}", style::branch(&branch));
     Ok(())
 }
 
@@ -79,11 +88,15 @@ pub fn detach_branch(branch: Option<&str>) -> Result<()> {
 pub fn rename_branch(old: &str, new: &str) -> Result<()> {
     let children = children_for_branch(old)?;
     git::rename_branch(old, new)?;
-    println!("renamed {old} -> {new}");
+    anstream::println!("renamed {} -> {}", style::branch(old), style::branch(new));
 
     for child in &children {
         set_parent_for_branch(child, new)?;
-        println!("retargeted {child} -> {new}");
+        anstream::println!(
+            "retargeted {} -> {}",
+            style::branch(child),
+            style::branch(new)
+        );
     }
     Ok(())
 }

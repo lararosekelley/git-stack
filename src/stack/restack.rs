@@ -9,6 +9,7 @@ use super::{base_of, children_map, collect_descendants, parent_map, record_base,
 use crate::cli::{PushMode, UpdateRefsMode};
 use crate::git;
 use crate::settings;
+use crate::style;
 
 const STATE_FILE: &str = "stack-state";
 
@@ -21,7 +22,7 @@ pub fn restack(update_refs_mode: UpdateRefsMode, push_mode: PushMode) -> Result<
     let branches = restack_order(&root, &parents);
 
     if branches.is_empty() {
-        println!("nothing to restack");
+        anstream::println!("{}", style::dim("nothing to restack"));
         return Ok(());
     }
 
@@ -39,7 +40,7 @@ pub fn continue_restack() -> Result<()> {
     };
 
     if let Err(error) = git::rebase_continue() {
-        eprintln!("restack still has conflicts");
+        anstream::eprintln!("{}", style::warn("restack still has conflicts"));
         eprintln!("resolve conflicts, then run `git stk continue`");
         eprintln!("or run `git stk abort`");
         return Err(error);
@@ -110,14 +111,26 @@ fn restack_branches(
         if base.as_deref() == Some(parent_tip.as_str())
             && git::is_ancestor(parent, branch).unwrap_or(false)
         {
-            println!("{branch} already up to date with {parent}");
+            anstream::println!(
+                "{} already up to date with {}",
+                style::branch(branch),
+                style::branch(parent)
+            );
             continue;
         }
 
         if update_refs {
-            println!("rebasing {branch} onto {parent} with --update-refs");
+            anstream::println!(
+                "rebasing {} onto {} with --update-refs",
+                style::branch(branch),
+                style::branch(parent)
+            );
         } else {
-            println!("rebasing {branch} onto {parent}");
+            anstream::println!(
+                "rebasing {} onto {}",
+                style::branch(branch),
+                style::branch(parent)
+            );
         }
         let rebase_result = match &base {
             Some(base) => git::rebase_onto(parent, base, branch, update_refs),
@@ -136,7 +149,10 @@ fn restack_branches(
             }
             .write()?;
 
-            eprintln!("conflict while rebasing {branch} onto {parent}");
+            anstream::eprintln!(
+                "{}",
+                style::warn(&format!("conflict while rebasing {branch} onto {parent}"))
+            );
             eprintln!("resolve conflicts, then run `git stk continue`");
             eprintln!("or run `git stk abort`");
             return Err(error);
@@ -152,17 +168,20 @@ fn restack_branches(
 /// After every branch has been rebased: push the rewritten branches, or print
 /// the exact command so stale remote PR diffs are a copy-paste away from fixed.
 fn finish_restack(branches: &[String], push: bool) -> Result<()> {
-    println!("restack complete");
+    anstream::println!("{}", style::success("restack complete"));
 
     let remote = settings::remote()?;
     if push {
         git::push_force_with_lease(&remote, branches)?;
-        println!("pushed {} to {remote}", branches.join(" "));
+        anstream::println!("pushed {} to {remote}", style::branch(&branches.join(" ")));
     } else {
         println!("remote branches may be stale; push them with:");
-        println!(
-            "  git push --force-with-lease {remote} {}",
-            branches.join(" ")
+        anstream::println!(
+            "{}",
+            style::dim(&format!(
+                "  git push --force-with-lease {remote} {}",
+                branches.join(" ")
+            ))
         );
     }
     Ok(())

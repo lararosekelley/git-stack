@@ -27,6 +27,31 @@ pub fn paint(style: Style, text: &str) -> String {
     format!("{style}{text}{style:#}")
 }
 
+/// A branch name in the branch color.
+pub fn branch(name: &str) -> String {
+    paint(BRANCH, name)
+}
+
+/// Secondary detail: ids, urls, skip lines, previews.
+pub fn dim(text: &str) -> String {
+    paint(DIM, text)
+}
+
+/// Completion lines ("... complete", "merged ...").
+pub fn success(text: &str) -> String {
+    paint(OPEN, text)
+}
+
+/// Notable-but-not-fatal lines.
+pub fn warn(text: &str) -> String {
+    paint(WARN, text)
+}
+
+/// The shared `hint:` prefix.
+pub fn hint_prefix() -> String {
+    paint(HINT, "hint:")
+}
+
 /// A review state in its color.
 pub fn state(state: &ReviewState) -> String {
     let style = match state {
