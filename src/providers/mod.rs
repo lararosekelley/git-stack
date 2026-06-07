@@ -94,7 +94,9 @@ pub trait ReviewProvider {
     fn update_review_body(&self, review: &ReviewRequest, body: &str) -> Result<String>;
 
     /// Merge the review with the given strategy: squash, rebase, or merge.
-    fn merge_review(&self, review: &ReviewRequest, strategy: &str) -> Result<String>;
+    /// With `auto`, schedule the merge for when required checks pass
+    /// instead of merging now.
+    fn merge_review(&self, review: &ReviewRequest, strategy: &str, auto: bool) -> Result<String>;
 }
 
 pub fn detect_provider() -> Result<DetectedProvider> {

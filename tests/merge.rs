@@ -167,6 +167,16 @@ esac
     assert!(!repo.path().join("merged.txt").exists());
 
     repo.stack()
+        .args(["merge", "--dry-run", "--auto"])
+        .env("PATH", path.clone())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "would merge A work (#12) into main (squash, auto)",
+        ));
+    assert!(!repo.path().join("merged.txt").exists());
+
+    repo.stack()
         .args(["merge"])
         .env("PATH", path)
         .write_stdin("n\n")
@@ -174,6 +184,131 @@ esac
         .success()
         .stdout(predicates::str::contains("merge cancelled"));
     assert!(!repo.path().join("merged.txt").exists());
+}
+
+#[test]
+fn merge_auto_schedules_and_skips_the_sync() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+
+    // The PR stays open after `pr merge --auto`: scheduled, not merged.
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ merge\ 12*)
+    printf '%s\n' "$*" > merge-args.txt
+    ;;
+  *feature/a\ --state\ merged*)
+    printf '[]\n'
+    ;;
+  *feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["merge", "-y", "--auto"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "merge scheduled for A work (#12); rerun `git stk sync` once checks pass",
+        ));
+
+    let recorded = fs::read_to_string(repo.path().join("merge-args.txt")).expect("merge args");
+    assert_eq!(recorded.trim(), "pr merge 12 --squash --auto");
+    // No sync ran: the branch survives untouched.
+    assert_eq!(repo.git(["branch", "--show-current"]), "feature/a");
+}
+
+#[test]
+fn merge_hints_when_required_checks_block_it() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ merge\ 12*)
+    echo 'GraphQL: Required status check "ci" is expected. (mergePullRequest)' >&2
+    exit 1
+    ;;
+  *feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["merge", "-y"])
+        .env("PATH", path)
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "hint: required checks may not be green yet - rerun `git stk merge` \
+             when they pass, or schedule with `git stk merge --auto`",
+        ));
+}
+
+#[test]
+fn merge_reports_a_scheduled_gitlab_auto_merge() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "gitlab"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+
+    // glab exits 0 after scheduling the merge; the MR stays open.
+    let path = repo.fake_cli(
+        "glab",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  mr\ merge\ 34*)
+    printf 'merge scheduled to run when pipeline succeeds\n'
+    ;;
+  *feature/a*)
+    cat <<'JSON'
+[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/a","web_url":"https://gitlab.com/owner/repo/-/merge_requests/34","title":"A work"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["merge", "-y"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "merge scheduled for A work (!34); rerun `git stk sync` once checks pass",
+        ));
+
+    assert_eq!(repo.git(["branch", "--show-current"]), "feature/a");
 }
 
 #[test]
