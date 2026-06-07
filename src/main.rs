@@ -11,7 +11,10 @@ fn main() -> Result<()> {
         .var(completions::COMPLETE_VAR)
         .complete();
 
-    match Cli::parse().command {
+    let cli = Cli::parse();
+    git_stk::git::set_verbose(cli.verbose);
+
+    match cli.command {
         Command::New(command) => command.run(),
         Command::Parent(command) => command.run(),
         Command::Children(command) => command.run(),

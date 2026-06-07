@@ -7,6 +7,9 @@ use crate::commands;
 #[command(version)]
 #[command(about = "Git-native stacked branch workflow helper, with GitHub and GitLab integration")]
 pub struct Cli {
+    /// Pass raw git output through instead of showing it only on failure.
+    #[arg(long, short = 'v', global = true)]
+    pub verbose: bool,
     #[command(subcommand)]
     pub command: Command,
 }

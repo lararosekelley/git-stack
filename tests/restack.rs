@@ -2,6 +2,7 @@ use std::fs;
 mod common;
 
 use common::TestRepo;
+use predicates::prelude::PredicateBooleanExt;
 
 #[test]
 fn restack_rebases_descendants_onto_updated_parent() {
@@ -104,6 +105,67 @@ fn restack_can_opt_out_of_update_refs() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(!stdout.contains("--update-refs"));
     assert!(stdout.contains("restack complete"));
+}
+
+#[test]
+fn restack_is_quiet_by_default_and_loud_with_verbose() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.git(["switch", "main"]);
+    repo.commit_file("main.txt", "main\n", "main moves");
+    repo.git(["switch", "feature/a"]);
+
+    // Quiet by default: the rebase happens, git's narration does not.
+    repo.stack()
+        .arg("restack")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("rebasing feature/a onto main"))
+        .stderr(predicates::str::contains("Successfully rebased").not());
+
+    repo.git(["switch", "main"]);
+    repo.commit_file("main.txt", "main\nmore\n", "main moves again");
+    repo.git(["switch", "feature/a"]);
+
+    // --verbose passes git's own output through.
+    repo.stack()
+        .args(["restack", "--verbose"])
+        .assert()
+        .success()
+        .stderr(predicates::str::contains("Successfully rebased"));
+}
+
+#[test]
+fn restack_replays_git_output_when_the_rebase_fails() {
+    let repo = TestRepo::new();
+
+    repo.commit_file("conflict.txt", "base\n", "add conflict file");
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("conflict.txt", "parent\n", "parent edits conflict file");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("conflict.txt", "parent\nchild\n", "child edits same file");
+    repo.git(["switch", "feature/a"]);
+    repo.git(["reset", "--hard", "HEAD~1"]);
+    repo.commit_file("conflict.txt", "updated parent\n", "update parent");
+
+    // The captured git output comes back on failure, so the conflict keeps
+    // its context.
+    let assert = repo.stack().arg("restack").assert().failure();
+    let output = assert.get_output();
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        combined.contains("CONFLICT"),
+        "missing conflict context:\n{combined}"
+    );
+    assert!(combined.contains("resolve conflicts, then run `git stk continue`"));
+
+    repo.stack().arg("abort").assert().success();
 }
 
 #[test]

@@ -1,6 +1,19 @@
+use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, anyhow, bail};
+
+static VERBOSE: AtomicBool = AtomicBool::new(false);
+
+/// Pass raw git output through instead of capturing it.
+pub fn set_verbose(verbose: bool) {
+    VERBOSE.store(verbose, Ordering::Relaxed);
+}
+
+fn verbose() -> bool {
+    VERBOSE.load(Ordering::Relaxed)
+}
 
 pub fn current_branch() -> Result<String> {
     output(&["symbolic-ref", "--quiet", "--short", "HEAD"])
@@ -34,7 +47,9 @@ pub fn remote_url(remote: &str) -> Result<Option<String>> {
 }
 
 pub fn checkout(branch: &str) -> Result<()> {
-    status(&["switch", branch]).with_context(|| format!("failed to check out {branch}"))
+    status(&["switch", branch]).with_context(|| format!("failed to check out {branch}"))?;
+    println!("switched to {branch}");
+    Ok(())
 }
 
 pub fn create_branch(branch: &str) -> Result<()> {
@@ -173,7 +188,8 @@ fn help_mentions_update_refs(help: &str) -> bool {
 }
 
 pub fn rebase_continue() -> Result<()> {
-    status(&["rebase", "--continue"]).context("failed to continue rebase")
+    // Passthrough: continuing a rebase can open the user's editor.
+    status_passthrough(&["rebase", "--continue"]).context("failed to continue rebase")
 }
 
 pub fn rebase_abort() -> Result<()> {
@@ -276,7 +292,31 @@ fn output(args: &[&str]) -> Result<String> {
     }
 }
 
+/// Run git quietly: progress and advice only matter when something goes
+/// wrong, so capture them and replay on failure. `--verbose` passes
+/// everything through.
 fn status(args: &[&str]) -> Result<()> {
+    if verbose() {
+        return status_passthrough(args);
+    }
+
+    let output = Command::new("git")
+        .args(args)
+        .output()
+        .context("failed to run git")?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let _ = std::io::stdout().write_all(&output.stdout);
+        let _ = std::io::stderr().write_all(&output.stderr);
+        bail!("git exited with status {}", output.status)
+    }
+}
+
+/// Inherit stdio unconditionally, for git commands that may need the
+/// terminal (e.g. `rebase --continue` opening the editor).
+fn status_passthrough(args: &[&str]) -> Result<()> {
     let status = Command::new("git")
         .args(args)
         .status()
