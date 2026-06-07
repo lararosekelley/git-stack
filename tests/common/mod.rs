@@ -1,7 +1,9 @@
 //! Shared integration-test harness.
 #![allow(dead_code)]
 
-use std::{env, fs, os::unix::fs::PermissionsExt, path::Path, process::Command};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
+use std::{env, fs, path::Path, process::Command};
 
 use tempfile::TempDir;
 
@@ -35,7 +37,7 @@ impl TestRepo {
     /// the suite stays hermetic (e.g. a global stk.pushOnSubmit=true must not
     /// change test behavior).
     pub fn isolate_git_config(command: &mut Command) {
-        command.env("GIT_CONFIG_GLOBAL", "/dev/null");
+        command.env("GIT_CONFIG_GLOBAL", nul_device());
         command.env("GIT_CONFIG_NOSYSTEM", "1");
     }
 
@@ -94,7 +96,7 @@ impl TestRepo {
         let mut command = assert_cmd::Command::cargo_bin("git-stk").expect("git-stk binary");
         command.current_dir(self.path());
         command.env("GIT_EDITOR", "true");
-        command.env("GIT_CONFIG_GLOBAL", "/dev/null");
+        command.env("GIT_CONFIG_GLOBAL", nul_device());
         command.env("GIT_CONFIG_NOSYSTEM", "1");
         // Hermetic color: ambient terminal settings must not restyle output.
         command.env_remove("CLICOLOR");
@@ -103,6 +105,9 @@ impl TestRepo {
         command
     }
 
+    /// Unix-only: the fakes are sh scripts (the portable fake is future
+    /// work).
+    #[cfg(unix)]
     pub fn fake_cli(&self, name: &str, script: &str) -> String {
         let bin_dir = self.path().join("fake-bin");
         fs::create_dir_all(&bin_dir).expect("create fake bin dir");
@@ -191,4 +196,9 @@ printf '%s\n' "${{COMPREPLY[@]}}"
         );
         String::from_utf8_lossy(&result.stdout).into_owned()
     }
+}
+
+/// Git's "no config file" sink, per platform.
+pub fn nul_device() -> &'static str {
+    if cfg!(windows) { "NUL" } else { "/dev/null" }
 }

@@ -80,6 +80,7 @@ fn rename_retargets_every_direct_child() {
 }
 
 #[test]
+#[cfg(unix)] // drives an sh-script provider fake
 fn rename_warns_when_a_review_heads_the_old_name() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
