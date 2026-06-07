@@ -187,6 +187,214 @@ esac
 }
 
 #[test]
+fn merge_all_lands_the_whole_stack() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+    let _bare = repo.add_bare_origin(&["main", "feature/a", "feature/b"]);
+
+    // Stateful fake: each `pr merge` flips its PR to merged, and the
+    // retarget from the first sync moves #13's base to main.
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+base13() { cat base-13 2>/dev/null || echo feature/a; }
+case "$*" in
+  pr\ merge\ 12*)
+    printf '%s\n' "$*" > merge-args-12.txt
+    ;;
+  pr\ merge\ 13*)
+    printf '%s\n' "$*" > merge-args-13.txt
+    ;;
+  pr\ edit\ 13\ --base\ *)
+    printf '%s' "$5" > base-13
+    ;;
+  *feature/a\ --state\ merged*)
+    if [ -f merge-args-12.txt ]; then
+      printf '[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
+    else
+      printf '[]\n'
+    fi
+    ;;
+  *feature/a*)
+    if [ -f merge-args-12.txt ]; then
+      printf '[]\n'
+    else
+      printf '[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
+    fi
+    ;;
+  *feature/b\ --state\ merged*)
+    if [ -f merge-args-13.txt ]; then
+      printf '[{"number":13,"state":"MERGED","baseRefName":"%s","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]\n' "$(base13)"
+    else
+      printf '[]\n'
+    fi
+    ;;
+  *feature/b*)
+    if [ -f merge-args-13.txt ]; then
+      printf '[]\n'
+    else
+      printf '[{"number":13,"state":"OPEN","baseRefName":"%s","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]\n' "$(base13)"
+    fi
+    ;;
+  pr\ edit*)
+    printf 'edited\n'
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["merge", "--all", "-y"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("merged A work (#12)"))
+        .stdout(predicates::str::contains("merged B work (#13)"))
+        .stdout(predicates::str::contains(
+            "stack complete: everything merged into main",
+        ))
+        .stdout(predicates::str::contains(
+            "merge complete: 2 of 2 reviews merged",
+        ));
+
+    let first = fs::read_to_string(repo.path().join("merge-args-12.txt")).expect("merge 12");
+    assert_eq!(first.trim(), "pr merge 12 --squash");
+    let second = fs::read_to_string(repo.path().join("merge-args-13.txt")).expect("merge 13");
+    assert_eq!(second.trim(), "pr merge 13 --squash");
+
+    assert_eq!(repo.git(["branch", "--show-current"]), "main");
+    assert_eq!(
+        repo.git_status(["branch", "--list", "feature/a", "feature/b"])
+            .stdout
+            .len(),
+        0
+    );
+}
+
+#[test]
+fn merge_all_dry_run_lists_each_review() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ merge*)
+    touch merged.txt
+    ;;
+  *feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]
+JSON
+    ;;
+  *feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["merge", "--all", "--dry-run"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "would merge A work (#12) into main (squash)",
+        ))
+        .stdout(predicates::str::contains(
+            "would merge B work (#13) into feature/a (squash)",
+        ))
+        .stdout(predicates::str::contains("would sync after each merge"));
+
+    assert!(!repo.path().join("merged.txt").exists());
+}
+
+#[test]
+fn merge_all_stops_when_a_merge_only_schedules() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+
+    // The first merge only schedules (the PR stays open), so the loop must
+    // stop without touching the rest of the stack.
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ merge\ 12*)
+    printf '%s\n' "$*" > merge-args-12.txt
+    ;;
+  pr\ merge*)
+    touch unexpected-merge.txt
+    ;;
+  *feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]
+JSON
+    ;;
+  *feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["merge", "--all", "-y"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "merge scheduled for A work (#12); rerun `git stk sync` once checks pass",
+        ))
+        .stdout(predicates::str::contains(
+            "merge complete: 0 of 2 reviews merged",
+        ));
+
+    assert!(!repo.path().join("unexpected-merge.txt").exists());
+    assert_eq!(repo.git(["branch", "--show-current"]), "feature/b");
+}
+
+#[test]
+fn merge_all_conflicts_with_auto() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+
+    repo.stack()
+        .args(["merge", "--all", "--auto"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("cannot be used with"));
+}
+
+#[test]
 fn merge_auto_schedules_and_skips_the_sync() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
