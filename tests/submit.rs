@@ -317,10 +317,13 @@ esac
     // trunk in backticks, footer link.
     let bottom = fs::read_to_string(repo.path().join("edit-body-12.txt")).expect("bottom body");
     assert!(bottom.contains("Parent PR description."));
-    assert!(bottom.contains("- [Top change (#13)](https://github.com/owner/repo/pull/13)"));
+    assert!(bottom.contains("<!-- git-stk:data "));
     assert!(
-        bottom.contains("- [Bottom change (#12)](https://github.com/owner/repo/pull/12) \u{1F448}")
+        bottom.contains("- \u{1F7E2} [Top change (#13)](https://github.com/owner/repo/pull/13)")
     );
+    assert!(bottom.contains(
+        "- \u{1F7E2} [Bottom change (#12)](https://github.com/owner/repo/pull/12) \u{1F448}"
+    ));
     assert!(bottom.contains("- `main`"));
     assert!(
         bottom.contains(
@@ -333,8 +336,147 @@ esac
 
     // The top PR points at itself instead.
     let top = fs::read_to_string(repo.path().join("edit-body-13.txt")).expect("top body");
-    assert!(top.contains("- [Top change (#13)](https://github.com/owner/repo/pull/13) \u{1F448}"));
+    assert!(top.contains(
+        "- \u{1F7E2} [Top change (#13)](https://github.com/owner/repo/pull/13) \u{1F448}"
+    ));
     assert!(!top.contains("(#12)](https://github.com/owner/repo/pull/12) \u{1F448}"));
+}
+
+#[test]
+fn submit_links_issue_referenced_by_branch_name() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["switch", "-c", "5-fix-thing"]);
+    repo.git(["config", "branch.5-fix-thing.stkParent", "main"]);
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ view\ 12*)
+    printf '{"body":"Description."}\n'
+    ;;
+  pr\ edit\ 12\ --body*)
+    printf '%s\n' "$*" > edit-body-12.txt
+    ;;
+  pr\ list*5-fix-thing*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"5-fix-thing","url":"https://github.com/owner/repo/pull/12","title":"Fix thing"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    // Dry run announces the link without editing anything.
+    repo.stack()
+        .args(["submit", "--dry-run"])
+        .env("PATH", path.clone())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("would link issue #5 in #12"));
+    assert!(!repo.path().join("edit-body-12.txt").exists());
+
+    repo.stack()
+        .arg("submit")
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("linked issue #5 in #12"));
+
+    let body = fs::read_to_string(repo.path().join("edit-body-12.txt")).expect("edited body");
+    assert!(body.contains("Description."));
+    assert!(body.contains("<!-- git-stk:closes -->\nCloses #5\n<!-- /git-stk:closes -->"));
+}
+
+#[test]
+fn submit_stack_preserves_merged_ledger_entries() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+
+    // The bottom PR's body carries a ledger that remembers #11, a review
+    // whose branch merged and was deleted long ago. The top PR has never
+    // seen it.
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ view\ 11*)
+    printf '{"body":"Old description."}\n'
+    ;;
+  pr\ view\ 12*)
+    cat <<'JSON'
+{"body":"Intro.\n\n<!-- git-stk:stack -->\n<!-- git-stk:data [{\"id\":\"#11\",\"url\":\"https://github.com/owner/repo/pull/11\",\"title\":\"Landed\",\"state\":\"merged\"}] -->\n- stale bullets\n<!-- /git-stk:stack -->"}
+JSON
+    ;;
+  pr\ view\ 13*)
+    printf '{"body":""}\n'
+    ;;
+  pr\ edit\ 11\ --body*)
+    printf '%s\n' "$*" > edit-body-11.txt
+    ;;
+  pr\ edit\ 12\ --body*)
+    printf '%s\n' "$*" > edit-body-12.txt
+    ;;
+  pr\ edit\ 13\ --body*)
+    printf '%s\n' "$*" > edit-body-13.txt
+    ;;
+  pr\ list*feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]
+JSON
+    ;;
+  pr\ list*feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.git(["switch", "feature/a"]);
+    repo.stack()
+        .args(["submit", "--stack"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("updated stack note in #12"))
+        .stdout(predicates::str::contains("updated stack note in #13"))
+        .stdout(predicates::str::contains("updated stack note in #11"));
+
+    // The merged entry survives, restyled, below the live stack.
+    let bottom = fs::read_to_string(repo.path().join("edit-body-12.txt")).expect("bottom body");
+    assert!(bottom.contains("Intro."));
+    assert!(bottom.contains(
+        "- \u{1F7E3} ~~[Landed (#11)](https://github.com/owner/repo/pull/11)~~ (merged)"
+    ));
+    let top_at = bottom.find("(#13)").expect("top entry");
+    let bottom_at = bottom.find("(#12)").expect("bottom entry");
+    let landed_at = bottom.find("(#11)").expect("merged entry");
+    assert!(
+        top_at < bottom_at && bottom_at < landed_at,
+        "leaf-first order"
+    );
+
+    // History propagates to bodies that never carried it.
+    let top = fs::read_to_string(repo.path().join("edit-body-13.txt")).expect("top body");
+    assert!(top.contains("~~[Landed (#11)](https://github.com/owner/repo/pull/11)~~ (merged)"));
+
+    // The merged review's own body gets the refreshed ledger, pointing at
+    // itself.
+    let landed = fs::read_to_string(repo.path().join("edit-body-11.txt")).expect("merged body");
+    assert!(landed.contains("Old description."));
+    assert!(landed.contains(
+        "- \u{1F7E3} ~~[Landed (#11)](https://github.com/owner/repo/pull/11)~~ (merged) \u{1F448}"
+    ));
 }
 
 #[test]
@@ -388,7 +530,7 @@ esac
     assert_eq!(top.matches("<!-- /git-stk:stack -->").count(), 1);
     assert!(top.contains("Intro."));
     assert!(top.contains("user deleted the end marker"));
-    assert!(top.contains("- [Top change (#13)]"));
+    assert!(top.contains("- \u{1F7E2} [Top change (#13)]"));
 }
 
 #[test]
@@ -441,12 +583,11 @@ esac
     let recorded = fs::read_to_string(repo.path().join("update-description-args.txt"))
         .expect("update description args");
     assert!(recorded.contains(
-        "- [Top change (!35)](https://gitlab.com/owner/repo/-/merge_requests/35) \u{1F448}"
+        "- \u{1F7E2} [Top change (!35)](https://gitlab.com/owner/repo/-/merge_requests/35) \u{1F448}"
     ));
-    assert!(
-        recorded
-            .contains("- [Bottom change (!34)](https://gitlab.com/owner/repo/-/merge_requests/34)")
-    );
+    assert!(recorded.contains(
+        "- \u{1F7E2} [Bottom change (!34)](https://gitlab.com/owner/repo/-/merge_requests/34)"
+    ));
     assert!(recorded.contains("- `main`"));
 }
 

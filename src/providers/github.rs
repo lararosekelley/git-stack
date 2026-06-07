@@ -9,37 +9,21 @@ pub(super) struct GitHubProvider;
 
 impl ReviewProvider for GitHubProvider {
     fn review_for_branch(&self, branch: &str) -> Result<Option<ReviewRequest>> {
-        let output = command_output(
-            "gh",
-            &[
-                "pr",
-                "list",
-                "--head",
-                branch,
-                "--json",
-                "number,state,baseRefName,headRefName,url,title",
-            ],
-        )?;
-        if let Some(review) = parse_github_review(&output)? {
-            return Ok(Some(review));
-        }
-
         // gh pr list only returns open pull requests by default; check merged
         // ones too so cleanup can see landed reviews.
-        let output = command_output(
-            "gh",
-            &[
-                "pr",
-                "list",
-                "--head",
-                branch,
-                "--state",
-                "merged",
-                "--json",
-                "number,state,baseRefName,headRefName,url,title",
-            ],
-        )?;
-        parse_github_review(&output)
+        if let Some(review) = list_review(branch, None)? {
+            return Ok(Some(review));
+        }
+        list_review(branch, Some("merged"))
+    }
+
+    fn review_for_branch_including_closed(&self, branch: &str) -> Result<Option<ReviewRequest>> {
+        // Open and merged take precedence: a branch resubmitted after its
+        // review was closed should resolve to the fresh review.
+        if let Some(review) = self.review_for_branch(branch)? {
+            return Ok(Some(review));
+        }
+        list_review(branch, Some("closed"))
     }
 
     fn create_review(&self, branch: &str, base: &str) -> Result<String> {
@@ -70,6 +54,17 @@ impl ReviewProvider for GitHubProvider {
         };
         command_output("gh", &["pr", "merge", review.id_value(), flag])
     }
+}
+
+fn list_review(branch: &str, state: Option<&str>) -> Result<Option<ReviewRequest>> {
+    let mut args = vec!["pr", "list", "--head", branch];
+    if let Some(state) = state {
+        args.extend(["--state", state]);
+    }
+    args.extend(["--json", "number,state,baseRefName,headRefName,url,title"]);
+
+    let output = command_output("gh", &args)?;
+    parse_github_review(&output)
 }
 
 fn parse_github_review(output: &str) -> Result<Option<ReviewRequest>> {

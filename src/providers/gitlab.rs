@@ -9,29 +9,21 @@ pub(super) struct GitLabProvider;
 
 impl ReviewProvider for GitLabProvider {
     fn review_for_branch(&self, branch: &str) -> Result<Option<ReviewRequest>> {
-        let output = command_output(
-            "glab",
-            &["mr", "list", "--source-branch", branch, "--output", "json"],
-        )?;
-        if let Some(review) = parse_gitlab_review(&output)? {
-            return Ok(Some(review));
-        }
-
         // glab mr list only returns open merge requests by default; check
         // merged ones too so cleanup can see landed reviews.
-        let output = command_output(
-            "glab",
-            &[
-                "mr",
-                "list",
-                "--source-branch",
-                branch,
-                "--merged",
-                "--output",
-                "json",
-            ],
-        )?;
-        parse_gitlab_review(&output)
+        if let Some(review) = list_review(branch, None)? {
+            return Ok(Some(review));
+        }
+        list_review(branch, Some("--merged"))
+    }
+
+    fn review_for_branch_including_closed(&self, branch: &str) -> Result<Option<ReviewRequest>> {
+        // Open and merged take precedence: a branch resubmitted after its
+        // review was closed should resolve to the fresh review.
+        if let Some(review) = self.review_for_branch(branch)? {
+            return Ok(Some(review));
+        }
+        list_review(branch, Some("--closed"))
     }
 
     fn create_review(&self, branch: &str, base: &str) -> Result<String> {
@@ -80,6 +72,17 @@ impl ReviewProvider for GitLabProvider {
         }
         command_output("glab", &args)
     }
+}
+
+fn list_review(branch: &str, state_flag: Option<&str>) -> Result<Option<ReviewRequest>> {
+    let mut args = vec!["mr", "list", "--source-branch", branch];
+    if let Some(flag) = state_flag {
+        args.push(flag);
+    }
+    args.extend(["--output", "json"]);
+
+    let output = command_output("glab", &args)?;
+    parse_gitlab_review(&output)
 }
 
 fn parse_gitlab_review(output: &str) -> Result<Option<ReviewRequest>> {

@@ -110,13 +110,24 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
         if dry_run { "would be " } else { "" }
     );
 
+    // 4. Refresh the stack overview ledger in every review body while the
+    //    merged branches and their reviews are still resolvable, so their
+    //    entries get restyled rather than dropped.
+    let mut branch_parents = Vec::new();
+    for branch in &branches {
+        if let Some(parent) = stack::parent_for_branch(branch)? {
+            branch_parents.push((branch.clone(), parent));
+        }
+    }
+    crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run)?;
+
     let survivors: Vec<String> = branches
         .iter()
         .filter(|branch| !merged.contains(branch))
         .cloned()
         .collect();
 
-    // 4. Move off any branch that is about to be deleted, onto the first
+    // 5. Move off any branch that is about to be deleted, onto the first
     //    survivor (the new stack bottom) or the trunk.
     let mut position = current.clone();
     if merged.contains(&current) {
@@ -133,20 +144,20 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
         position = target;
     }
 
-    // 5. Clean up the merged branches: retarget children, then delete.
+    // 6. Clean up the merged branches: retarget children, then delete.
     for branch in &merged {
         cleanup_merged_branch(review_provider.as_ref(), branch, dry_run)?;
         cleanup_branch_deletion(branch, &position, dry_run, true)?;
     }
 
-    // 6. Restack the remainder (and push, per flags/config).
+    // 7. Restack the remainder (and push, per flags/config).
     if dry_run {
         println!("would restack the remaining stack");
     } else if !survivors.is_empty() {
         stack::restack(UpdateRefsMode::Config, push_mode)?;
     }
 
-    // 7. Where to look next.
+    // 8. Where to look next.
     match survivors.first() {
         Some(bottom) => match review_provider.review_for_branch(bottom)? {
             Some(review) => println!("next up: {bottom} -> {} {}", review.id, review.url),

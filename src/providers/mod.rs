@@ -79,6 +79,12 @@ pub struct ReviewRequest {
 pub trait ReviewProvider {
     fn review_for_branch(&self, branch: &str) -> Result<Option<ReviewRequest>>;
 
+    /// Like review_for_branch, but also finds closed reviews. Kept separate
+    /// so flows that act on a review (submit, sync, cleanup) never mistake a
+    /// dead review for a live one; only the stack-notes ledger wants closed
+    /// state, to restyle the entry rather than drop it.
+    fn review_for_branch_including_closed(&self, branch: &str) -> Result<Option<ReviewRequest>>;
+
     fn create_review(&self, branch: &str, base: &str) -> Result<String>;
 
     fn update_review_base(&self, review: &ReviewRequest, base: &str) -> Result<String>;
