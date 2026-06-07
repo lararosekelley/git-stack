@@ -3,6 +3,7 @@ use anyhow::Result;
 use crate::commands::Run;
 use crate::git;
 use crate::settings::SETTINGS;
+use crate::style;
 
 /// Print all stk git config settings and branch metadata.
 #[derive(Debug, clap::Args)]
@@ -20,14 +21,14 @@ pub fn print_config() -> Result<()> {
     for (key, default) in SETTINGS {
         match git::config_get(key)? {
             Some(value) => println!("{key} = {value}"),
-            None => println!("{key} (default: {default})"),
+            None => anstream::println!("{key} {}", style::dim(&format!("(default: {default})"))),
         }
     }
 
     let metadata = git::config_get_regexp(r"^branch\..*\.stk(parent|base)$")?;
     if metadata.is_empty() {
         println!();
-        println!("no branch metadata (no stacked branches)");
+        anstream::println!("{}", style::dim("no branch metadata (no stacked branches)"));
         return Ok(());
     }
 

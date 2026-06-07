@@ -5,6 +5,7 @@ use crate::commands::Run;
 use crate::completions;
 use crate::git;
 use crate::providers::{detect_provider, review_provider};
+use crate::style;
 
 /// Print the review request for a branch.
 #[derive(Debug, clap::Args)]
@@ -30,9 +31,13 @@ pub fn print_review(branch: Option<&str>) -> Result<()> {
         bail!("no {} review found for {branch}", provider.kind);
     };
 
-    println!(
+    anstream::println!(
         "{} {} -> {} {} {}",
-        review.id, review.branch, review.base, review.state, review.url
+        review.id,
+        style::branch(&review.branch),
+        style::branch(&review.base),
+        style::state(&review.state),
+        style::dim(&review.url)
     );
     Ok(())
 }

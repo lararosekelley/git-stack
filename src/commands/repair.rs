@@ -3,6 +3,7 @@ use clap::ArgAction;
 
 use crate::commands::Run;
 use crate::providers::{detect_provider, review_provider};
+use crate::style;
 use crate::{git, stack};
 
 /// Rebuild or verify local stack metadata from reviews and ancestry.
@@ -44,9 +45,12 @@ pub fn repair(dry_run: bool) -> Result<()> {
 
         if let Some(parent) = stack::parent_for_branch(branch)? {
             if !branches.contains(&parent) {
-                println!(
-                    "{branch}: parent {parent} does not exist locally; \
-                     fix with `git stk adopt` or `git stk detach {branch}`"
+                anstream::println!(
+                    "{}",
+                    style::warn(&format!(
+                        "{branch}: parent {parent} does not exist locally; \
+                         fix with `git stk adopt` or `git stk detach {branch}`"
+                    ))
                 );
                 unresolved += 1;
                 continue;
@@ -59,13 +63,15 @@ pub fn repair(dry_run: bool) -> Result<()> {
             if base_valid {
                 verified += 1;
             } else {
-                println!(
-                    "{branch}: {} fork point from {parent}",
+                anstream::println!(
+                    "{}: {} fork point from {}",
+                    style::branch(branch),
                     if dry_run {
                         "would re-record"
                     } else {
                         "re-recorded"
-                    }
+                    },
+                    style::branch(&parent)
                 );
                 if !dry_run {
                     stack::record_base(branch, &parent);
@@ -84,9 +90,12 @@ pub fn repair(dry_run: bool) -> Result<()> {
             if branches.contains(&review.base) {
                 found = Some((review.base.clone(), format!("{kind} review {}", review.id)));
             } else {
-                println!(
-                    "{branch}: review {} targets {}, which is not a local branch",
-                    review.id, review.base
+                anstream::println!(
+                    "{}",
+                    style::warn(&format!(
+                        "{branch}: review {} targets {}, which is not a local branch",
+                        review.id, review.base
+                    ))
                 );
             }
         }
@@ -95,16 +104,22 @@ pub fn repair(dry_run: bool) -> Result<()> {
             match nearest_ancestor_branch(branch, &branches)? {
                 Ancestry::One(parent) => found = Some((parent, "ancestry".to_owned())),
                 Ancestry::None => {
-                    println!(
-                        "{branch}: no parent found; attach manually with \
-                         `git stk adopt {branch} --parent <parent>`"
+                    anstream::println!(
+                        "{}",
+                        style::warn(&format!(
+                            "{branch}: no parent found; attach manually with \
+                             `git stk adopt {branch} --parent <parent>`"
+                        ))
                     );
                 }
                 Ancestry::Ambiguous(candidates) => {
-                    println!(
-                        "{branch}: ambiguous parent candidates ({}); attach manually with \
-                         `git stk adopt`",
-                        candidates.join(", ")
+                    anstream::println!(
+                        "{}",
+                        style::warn(&format!(
+                            "{branch}: ambiguous parent candidates ({}); attach manually with \
+                             `git stk adopt`",
+                            candidates.join(", ")
+                        ))
                     );
                 }
             }
@@ -112,9 +127,12 @@ pub fn repair(dry_run: bool) -> Result<()> {
 
         match found {
             Some((parent, source)) => {
-                println!(
-                    "{branch}: {} parent {parent} (from {source})",
-                    if dry_run { "would set" } else { "set" }
+                anstream::println!(
+                    "{}: {} parent {} {}",
+                    style::branch(branch),
+                    if dry_run { "would set" } else { "set" },
+                    style::branch(&parent),
+                    style::dim(&format!("(from {source})"))
                 );
                 if !dry_run {
                     stack::set_parent_for_branch(branch, &parent)?;
@@ -126,9 +144,12 @@ pub fn repair(dry_run: bool) -> Result<()> {
         }
     }
 
-    println!(
-        "repair complete: {repaired} {}repaired, {verified} verified, {unresolved} unresolved",
-        if dry_run { "would be " } else { "" }
+    anstream::println!(
+        "{}",
+        style::success(&format!(
+            "repair complete: {repaired} {}repaired, {verified} verified, {unresolved} unresolved",
+            if dry_run { "would be " } else { "" }
+        ))
     );
     Ok(())
 }
