@@ -80,7 +80,8 @@ impl TestRepo {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         );
-        help.contains("--update-refs")
+        // Match the name: git may render it as --[no-]update-refs.
+        help.contains("update-refs")
     }
 
     pub fn commit_file(&self, path: &str, contents: &str, message: &str) {

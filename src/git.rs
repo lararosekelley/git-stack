@@ -146,7 +146,13 @@ pub fn supports_rebase_update_refs() -> Result<bool> {
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr)
     );
-    Ok(help.contains("--update-refs"))
+    Ok(help_mentions_update_refs(&help))
+}
+
+/// Whether the short help advertises --update-refs. Match the option name:
+/// git renders it as `--update-refs` or `--[no-]update-refs` by version.
+fn help_mentions_update_refs(help: &str) -> bool {
+    help.contains("update-refs")
 }
 
 pub fn rebase_continue() -> Result<()> {
@@ -272,5 +278,54 @@ fn command_error(command: &str, stderr: &[u8]) -> anyhow::Error {
         anyhow!("{command} failed")
     } else {
         anyhow!("{command} failed: {stderr}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn help_mentions_update_refs_matches_pre_2_43_spelling() {
+        assert!(help_mentions_update_refs(
+            "    --update-refs    update branches that point to commits that are being rebased"
+        ));
+    }
+
+    #[test]
+    fn help_mentions_update_refs_matches_negatable_spelling() {
+        assert!(help_mentions_update_refs(
+            "    --[no-]update-refs    update branches that point to commits that are being rebased"
+        ));
+    }
+
+    #[test]
+    fn help_mentions_update_refs_rejects_help_without_the_option() {
+        assert!(!help_mentions_update_refs(
+            "    --[no-]autosquash    move commits that begin with squash!/fixup!"
+        ));
+    }
+
+    #[test]
+    fn detection_agrees_with_the_real_git_on_this_machine() {
+        // Ground truth: `--update-refs -h` fails with "unknown option" on a
+        // git without the flag and prints help on one that has it.
+        let probe = Command::new("git")
+            .args(["rebase", "--update-refs", "-h"])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .expect("run git rebase probe");
+        let probe_text = format!(
+            "{}{}",
+            String::from_utf8_lossy(&probe.stdout),
+            String::from_utf8_lossy(&probe.stderr)
+        );
+        let real_support = !probe_text.contains("unknown option");
+
+        assert_eq!(
+            supports_rebase_update_refs().expect("detect support"),
+            real_support
+        );
     }
 }
