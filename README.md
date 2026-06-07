@@ -193,9 +193,19 @@ git stk upgrade --force      # reinstall the latest release even if up to date
 git stk upgrade --head [-y]  # build and install the latest unreleased commit
 ```
 
-`upgrade` uses the install receipt written by the shell installer; copies installed with `cargo install` should
-upgrade through cargo instead. `--head` requires a Rust tool-chain, prompts before installing a pre-release build,
-and `git stk upgrade --force` returns you to the latest release afterwards.
+`upgrade` is driven by the install receipt the shell installer writes to `~/.config/git-stk/`
+(`%LOCALAPPDATA%\git-stk` on Windows): it records the installed version and where the binary lives, so
+`upgrade` knows what to replace. Copies installed with `cargo install` have no receipt and should upgrade
+through cargo instead.
+
+`--head` requires a Rust tool-chain, prompts before installing a pre-release build, and intentionally
+leaves the receipt's version stale - the HEAD build did not come from a release, so the receipt keeps
+pointing at the last one. `git stk upgrade --force` is the way back onto releases afterwards.
+
+Once a day, the common commands (`list`, `status`, `sync`, `submit`, `merge`, `restack`) check for a newer
+release after their work is done - capped at two seconds, silent on any failure or when stderr is not a
+terminal - and print a one-line nudge when behind. The check stamps `update-check` next to the receipt;
+set `STK_NO_UPDATE_CHECK=1` to turn it off.
 
 ## Configuration
 

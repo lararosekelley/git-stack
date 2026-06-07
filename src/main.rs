@@ -14,7 +14,20 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
     git_stk::git::set_verbose(cli.verbose);
 
-    match cli.command {
+    // Common, human-facing commands get the once-a-day update nudge after
+    // their work is done. Plumbing-ish output (completions, parent) and
+    // upgrade itself stay clean.
+    let hint_update = matches!(
+        &cli.command,
+        Command::List(_)
+            | Command::Status(_)
+            | Command::Sync(_)
+            | Command::Submit(_)
+            | Command::Merge(_)
+            | Command::Restack(_)
+    );
+
+    let result = match cli.command {
         Command::New(command) => command.run(),
         Command::Parent(command) => command.run(),
         Command::Children(command) => command.run(),
@@ -41,5 +54,10 @@ fn main() -> Result<()> {
         Command::Setup(command) => command.run(),
         Command::Upgrade(command) => command.run(),
         Command::Cleanup(command) => command.run(),
+    };
+
+    if result.is_ok() && hint_update {
+        git_stk::upgrade::maybe_hint_update();
     }
+    result
 }
