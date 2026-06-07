@@ -92,7 +92,8 @@ pub trait ReviewProvider {
     /// state, to restyle the entry rather than drop it.
     fn review_for_branch_including_closed(&self, branch: &str) -> Result<Option<ReviewRequest>>;
 
-    fn create_review(&self, branch: &str, base: &str) -> Result<String>;
+    /// Open a review for the branch; with `draft`, as a draft.
+    fn create_review(&self, branch: &str, base: &str, draft: bool) -> Result<String>;
 
     fn update_review_base(&self, review: &ReviewRequest, base: &str) -> Result<String>;
 

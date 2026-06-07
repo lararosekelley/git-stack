@@ -148,8 +148,8 @@ git stk review [branch]
 git stk sync [--dry-run] [--push | --no-push]
 git stk merge [-y] [--auto | --all] [--dry-run]
 git stk repair [--dry-run]
-git stk submit [branch] [-d <desc>] [--dry-run] [--push | --no-push]
-git stk submit [--stack | --no-stack] [-d <desc>] [--dry-run] [--push | --no-push]
+git stk submit [branch] [-d <desc>] [--draft | --no-draft] [--dry-run] [--push | --no-push]
+git stk submit [--stack | --no-stack | --downstack] [-d <desc>] [--draft | --no-draft] [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--keep-branch]
 ```
 
@@ -171,6 +171,10 @@ to rerun `git stk sync` once checks pass.
 root, then every branch above it - so it never matters where in the stack you are standing. With
 `git config stk.submitStack true`, bare `submit` does this by default; `--no-stack` or naming a branch
 submits a single branch.
+
+`submit --downstack` submits the stack from its bottom through the current branch only, so
+work-in-progress branches above you stay local. `--draft` (or `git config stk.submitDraft true`) opens
+new reviews as drafts; `--no-draft` overrides the config.
 
 `submit --push` (or `git config stk.pushOnSubmit true`) pushes the submitted branches with
 `-u --force-with-lease` before creating or updating reviews, so new branches exist remotely and rebased
@@ -236,6 +240,8 @@ Everything is optional; defaults shown below:
     submitStack = true
     ; Strategy for `merge`: squash, rebase, or merge. Default: squash.
     mergeStrategy = squash
+    ; Open new reviews as drafts. Default: false.
+    submitDraft = true
     ; Skip the once-a-day check for a newer release. Default: false.
     noUpdateCheck = true
 ```

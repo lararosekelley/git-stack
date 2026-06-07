@@ -24,6 +24,14 @@ pub struct Submit {
     /// Submit only the current branch, overriding stk.submitStack.
     #[arg(long, action = ArgAction::SetTrue, conflicts_with = "stack")]
     no_stack: bool,
+    /// Submit the stack from its bottom through the current branch only,
+    /// leaving work-in-progress branches above it unsubmitted.
+    #[arg(
+        long,
+        action = ArgAction::SetTrue,
+        conflicts_with_all = ["branch", "stack", "no_stack"],
+    )]
+    downstack: bool,
     /// Push branches (-u --force-with-lease) before submitting.
     #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_push")]
     push: bool,
@@ -34,6 +42,12 @@ pub struct Submit {
     /// string clears it. Applies to the current or named branch only.
     #[arg(long, short = 'd')]
     desc: Option<String>,
+    /// Create new reviews as drafts.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with = "no_draft")]
+    draft: bool,
+    /// Create new reviews ready for review, overriding stk.submitDraft.
+    #[arg(long, action = ArgAction::SetTrue)]
+    no_draft: bool,
 }
 
 impl Run for Submit {
@@ -48,22 +62,37 @@ impl Run for Submit {
             settings::bool_setting(settings::SUBMIT_STACK_KEY)?
         };
 
+        // Draft mode: --draft forces it on, --no-draft off; otherwise
+        // stk.submitDraft decides.
+        let draft = if self.draft {
+            true
+        } else if self.no_draft {
+            false
+        } else {
+            settings::bool_setting(settings::SUBMIT_DRAFT_KEY)?
+        };
+
         submit(
             self.branch.as_deref(),
             submit_stack,
+            self.downstack,
             self.dry_run,
             PushMode::from_flags(self.push, self.no_push),
             self.desc.as_deref(),
+            draft,
         )
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn submit(
     branch: Option<&str>,
     submit_stack: bool,
+    downstack: bool,
     dry_run: bool,
     push_mode: crate::cli::PushMode,
     desc: Option<&str>,
+    draft: bool,
 ) -> Result<()> {
     let branch = branch
         .map(str::to_owned)
@@ -71,7 +100,11 @@ pub fn submit(
     // The description targets this branch's review even in stack mode.
     let desc_branch = branch.clone();
 
-    let branches = if submit_stack {
+    let branches = if downstack {
+        // Bottom of the stack through the current branch: anything above is
+        // work in progress that stays local.
+        stack::path_from_root(&branch)?
+    } else if submit_stack {
         // The whole stack containing the current branch, from anywhere in it:
         // walk to the root, then take its descendants. The root is excluded
         // only when it is the trunk (the base everything sits on); an
@@ -118,6 +151,7 @@ pub fn submit(
             branch,
             parent,
             dry_run,
+            draft,
         )?);
     }
 
@@ -133,7 +167,7 @@ pub fn submit(
         )?;
     }
     crate::notes::update_closes_notes(review_provider.as_ref(), &branches, dry_run)?;
-    if submit_stack {
+    if submit_stack || downstack {
         crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run)?;
     }
 
@@ -163,6 +197,7 @@ fn submit_branch(
     branch: &str,
     parent: &str,
     dry_run: bool,
+    draft: bool,
 ) -> Result<SubmitAction> {
     if let Some(review) = review_provider.review_for_branch(branch)? {
         if review.base == parent {
@@ -202,7 +237,7 @@ fn submit_branch(
         let output = if dry_run {
             String::new()
         } else {
-            review_provider.create_review(branch, parent)?
+            review_provider.create_review(branch, parent, draft)?
         };
         anstream::println!(
             "{} {} -> {}",

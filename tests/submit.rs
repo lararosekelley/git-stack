@@ -900,6 +900,96 @@ printf '[]\n'
 }
 
 #[test]
+fn submit_downstack_stops_at_the_current_branch() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.stack().args(["new", "feature/c"]).assert().success();
+    repo.git(["switch", "feature/b"]);
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+printf '[]\n'
+"##,
+    );
+
+    // Standing mid-stack: the WIP leaf above stays unsubmitted.
+    repo.stack()
+        .args(["submit", "--downstack", "--dry-run"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("would create feature/a -> main"))
+        .stdout(predicates::str::contains(
+            "would create feature/b -> feature/a",
+        ))
+        .stdout(predicates::str::contains("feature/c").not());
+
+    // The scopes are mutually exclusive.
+    repo.stack()
+        .args(["submit", "--downstack", "--stack"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("cannot be used with"));
+}
+
+#[test]
+fn submit_draft_flag_and_config_control_creation() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["switch", "-c", "feature/b"]);
+    repo.git(["config", "branch.feature/b.stkParent", "main"]);
+    let log_path = repo.path().join("submit.log");
+    let path = repo.fake_cli(
+        "gh",
+        &format!(
+            r##"#!/usr/bin/env sh
+printf '%s\n' "$*" >> '{log}'
+case "$*" in
+  pr\ create*)
+    printf 'created url\n'
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+            log = log_path.display()
+        ),
+    );
+
+    // --draft passes through to creation.
+    repo.stack()
+        .args(["submit", "--draft"])
+        .env("PATH", path.clone())
+        .assert()
+        .success();
+    let log = fs::read_to_string(&log_path).expect("submit log");
+    assert!(log.contains("pr create --head feature/b --base main --fill --draft"));
+
+    // The config makes drafts the default; --no-draft overrides it.
+    fs::remove_file(&log_path).expect("reset log");
+    repo.git(["config", "stk.submitDraft", "true"]);
+    repo.stack()
+        .arg("submit")
+        .env("PATH", path.clone())
+        .assert()
+        .success();
+    let log = fs::read_to_string(&log_path).expect("submit log");
+    assert!(log.contains("--fill --draft"));
+
+    fs::remove_file(&log_path).expect("reset log");
+    repo.stack()
+        .args(["submit", "--no-draft"])
+        .env("PATH", path)
+        .assert()
+        .success();
+    let log = fs::read_to_string(&log_path).expect("submit log");
+    assert!(log.contains("pr create --head feature/b --base main --fill\n"));
+}
+
+#[test]
 fn bare_submit_uses_submit_stack_config() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
