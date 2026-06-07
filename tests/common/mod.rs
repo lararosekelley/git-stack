@@ -100,9 +100,6 @@ impl TestRepo {
         command.env_remove("CLICOLOR");
         command.env_remove("CLICOLOR_FORCE");
         command.env_remove("NO_COLOR");
-        // No release checks from the suite (piped stderr already skips them;
-        // this makes it explicit).
-        command.env("STK_NO_UPDATE_CHECK", "1");
         command
     }
 

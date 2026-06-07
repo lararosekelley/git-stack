@@ -20,7 +20,7 @@ const CHECK_INTERVAL_SECS: u64 = 24 * 60 * 60;
 /// release exists. Best effort with a hard time cap; anything unusual (no
 /// receipt, offline, piped stderr, opt-out) prints nothing.
 pub fn maybe_hint_update() {
-    if env::var_os("STK_NO_UPDATE_CHECK").is_some() || !std::io::stderr().is_terminal() {
+    if !std::io::stderr().is_terminal() {
         return;
     }
     let Some(path) = update_check_path() else {
@@ -31,6 +31,9 @@ pub fn maybe_hint_update() {
         .map(|elapsed| elapsed.as_secs())
         .unwrap_or(0);
     if !should_check(fs::read_to_string(&path).ok().as_deref(), now) {
+        return;
+    }
+    if crate::settings::bool_setting(crate::settings::NO_UPDATE_CHECK_KEY).unwrap_or(false) {
         return;
     }
 

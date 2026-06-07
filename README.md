@@ -205,7 +205,7 @@ pointing at the last one. `git stk upgrade --force` is the way back onto release
 Once a day, the common commands (`list`, `status`, `sync`, `submit`, `merge`, `restack`) check for a newer
 release after their work is done - capped at two seconds, silent on any failure or when stderr is not a
 terminal - and print a one-line nudge when behind. The check stamps `update-check` next to the receipt;
-set `STK_NO_UPDATE_CHECK=1` to turn it off.
+`git config stk.noUpdateCheck true` turns it off.
 
 ## Configuration
 
@@ -229,6 +229,8 @@ Everything is optional; defaults shown below:
     submitStack = true
     ; Strategy for `merge`: squash, rebase, or merge. Default: squash.
     mergeStrategy = squash
+    ; Skip the once-a-day check for a newer release. Default: false.
+    noUpdateCheck = true
 ```
 
 The tool also manages per-branch metadata: `branch.<name>.stkParent` (the stack parent) and
