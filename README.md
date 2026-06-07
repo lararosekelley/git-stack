@@ -177,6 +177,10 @@ the next update if the markup is hand-edited away.
 `submit` also links issues from branch names: a branch like `123-fix-thing` or `fix/issue-123` gets a
 `Closes #123` line in its PR/MR description, so the platform closes the issue when the review merges.
 
+`submit --desc <text>` (or `-d`) writes a description block at the top of the review body, above the
+managed sections, for the current or named branch only. It sticks across resubmits until changed;
+`--desc ""` removes it.
+
 Upgrading:
 
 ```sh

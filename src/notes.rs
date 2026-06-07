@@ -9,6 +9,7 @@ use crate::providers::{ReviewProvider, ReviewRequest, ReviewState};
 
 const STACK_SECTION: &str = "stack";
 const CLOSES_SECTION: &str = "closes";
+const DESCRIPTION_SECTION: &str = "description";
 const DATA_PREFIX: &str = "<!-- git-stk:data ";
 const COMMENT_END: &str = "-->";
 const TOOL_URL: &str = "https://github.com/lararosekelley/git-stk";
@@ -233,6 +234,70 @@ pub fn update_closes_notes(
     Ok(())
 }
 
+/// Write (or, with an empty string, clear) the description block in the
+/// branch's review body. Unlike the stack overview the block is sticky:
+/// submits without `--desc` never touch it.
+pub fn update_description_note(
+    review_provider: &dyn ReviewProvider,
+    branch: &str,
+    description: &str,
+    dry_run: bool,
+) -> Result<()> {
+    let verb = if description.is_empty() {
+        "clear"
+    } else {
+        "set"
+    };
+
+    let Some(review) = review_provider.review_for_branch(branch)? else {
+        if dry_run {
+            println!("would {verb} the description on the review for {branch}");
+        } else {
+            println!("skipped description: no review found for {branch}");
+        }
+        return Ok(());
+    };
+    if review.branch != *branch {
+        println!(
+            "skipped description: review {} belongs to {}",
+            review.id, review.branch
+        );
+        return Ok(());
+    }
+
+    if dry_run {
+        println!("would {verb} the description in {}", review.id);
+        return Ok(());
+    }
+
+    let body = review_provider.review_body(&review)?;
+    let updated = if description.is_empty() {
+        if !body.contains(&marker_start(DESCRIPTION_SECTION)) {
+            return Ok(());
+        }
+        strip_sections(&body, DESCRIPTION_SECTION)
+            .trim_end()
+            .to_owned()
+    } else {
+        body_with_description_note(&body, description)
+    };
+    if updated == body {
+        return Ok(());
+    }
+
+    review_provider.update_review_body(&review, &updated)?;
+    println!(
+        "{} description in {}",
+        if description.is_empty() {
+            "cleared"
+        } else {
+            "set"
+        },
+        review.id
+    );
+    Ok(())
+}
+
 /// The issue number a branch name refers to, if any. A path segment that
 /// starts with the number (`123-fix-thing`, `fix/123-thing`, bare `123`) or
 /// prefixes it with issue/issues (`issue-123`, `fix/issues-123-thing`)
@@ -437,25 +502,42 @@ fn body_with_section(body: &str, name: &str, content: &str) -> String {
 /// Splice the closes note in, keeping it above the stack overview so the
 /// closing keyword reads as part of the description rather than the footer.
 fn body_with_closes_note(body: &str, note: &str) -> String {
-    let section = format!(
-        "{}\n{note}\n{}",
-        marker_start(CLOSES_SECTION),
-        marker_end(CLOSES_SECTION)
-    );
-    let cleaned = strip_sections(body, CLOSES_SECTION);
+    body_with_section_before(body, CLOSES_SECTION, note, &[STACK_SECTION])
+}
 
-    if let Some(position) = cleaned.find(&marker_start(STACK_SECTION)) {
-        let head = cleaned[..position].trim_end();
-        let tail = &cleaned[position..];
-        if head.is_empty() {
-            format!("{section}\n\n{tail}")
-        } else {
-            format!("{head}\n\n{section}\n\n{tail}")
+/// Splice the user's description in, above every managed section so it
+/// reads as the opening of the body.
+fn body_with_description_note(body: &str, description: &str) -> String {
+    body_with_section_before(
+        body,
+        DESCRIPTION_SECTION,
+        description,
+        &[CLOSES_SECTION, STACK_SECTION],
+    )
+}
+
+/// Replace the named section, keeping it above the first of the `before`
+/// sections present in the body; without one, append at the end.
+fn body_with_section_before(body: &str, name: &str, content: &str, before: &[&str]) -> String {
+    let section = format!("{}\n{content}\n{}", marker_start(name), marker_end(name));
+    let cleaned = strip_sections(body, name);
+
+    let position = before
+        .iter()
+        .filter_map(|other| cleaned.find(&marker_start(other)))
+        .min();
+    match position {
+        Some(position) => {
+            let head = cleaned[..position].trim_end();
+            let tail = &cleaned[position..];
+            if head.is_empty() {
+                format!("{section}\n\n{tail}")
+            } else {
+                format!("{head}\n\n{section}\n\n{tail}")
+            }
         }
-    } else if cleaned.trim().is_empty() {
-        section
-    } else {
-        format!("{}\n\n{section}", cleaned.trim_end())
+        None if cleaned.trim().is_empty() => section,
+        None => format!("{}\n\n{section}", cleaned.trim_end()),
     }
 }
 
@@ -750,6 +832,37 @@ mod tests {
             closes < stack,
             "closes note should sit above the stack note"
         );
+    }
+
+    #[test]
+    fn body_with_description_note_lands_above_every_managed_section() {
+        let body = "Intro.\n\n\
+                    <!-- git-stk:closes -->\nCloses #5\n<!-- /git-stk:closes -->\n\n\
+                    <!-- git-stk:stack -->\nstack list\n<!-- /git-stk:stack -->";
+        let updated = body_with_description_note(body, "Summary.");
+
+        let intro = updated.find("Intro.").expect("intro");
+        let description = updated.find("Summary.").expect("description");
+        let closes = updated.find("Closes #5").expect("closes");
+        let stack = updated.find("stack list").expect("stack");
+        assert!(intro < description && description < closes && closes < stack);
+        assert!(
+            updated
+                .contains("<!-- git-stk:description -->\nSummary.\n<!-- /git-stk:description -->")
+        );
+    }
+
+    #[test]
+    fn body_with_description_note_replaces_in_place() {
+        let body = "<!-- git-stk:description -->\nOld.\n<!-- /git-stk:description -->\n\n\
+                    <!-- git-stk:stack -->\nstack list\n<!-- /git-stk:stack -->";
+        let updated = body_with_description_note(body, "New.");
+        assert_eq!(updated.matches("<!-- git-stk:description -->").count(), 1);
+        assert!(updated.contains("New."));
+        assert!(!updated.contains("Old."));
+        let description = updated.find("New.").expect("description");
+        let stack = updated.find("stack list").expect("stack");
+        assert!(description < stack);
     }
 
     #[test]

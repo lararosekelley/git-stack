@@ -392,6 +392,155 @@ esac
 }
 
 #[test]
+fn submit_desc_sets_replaces_and_clears_the_description_block() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["switch", "-c", "feature/a"]);
+    repo.git(["config", "branch.feature/a.stkParent", "main"]);
+
+    // First pass: a body with an existing stack section; the description
+    // must land above it.
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ view\ 12*)
+    printf '{"body":"Intro.\\n\\n<!-- git-stk:stack -->\\nstack list\\n<!-- /git-stk:stack -->"}\n'
+    ;;
+  pr\ edit\ 12\ --body*)
+    printf '%s\n' "$*" > edit-body-12.txt
+    ;;
+  *feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["submit", "--dry-run", "-d", "What and why."])
+        .env("PATH", path.clone())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "would set the description in #12",
+        ));
+    assert!(!repo.path().join("edit-body-12.txt").exists());
+
+    repo.stack()
+        .args(["submit", "-d", "What and why."])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("set description in #12"));
+
+    let body = fs::read_to_string(repo.path().join("edit-body-12.txt")).expect("edited body");
+    assert!(
+        body.contains("<!-- git-stk:description -->\nWhat and why.\n<!-- /git-stk:description -->")
+    );
+    let intro = body.find("Intro.").expect("intro");
+    let description = body.find("What and why.").expect("description");
+    let stack = body.find("stack list").expect("stack");
+    assert!(intro < description && description < stack);
+
+    // Second pass: a body that already carries a description; an empty
+    // --desc clears the block and leaves the rest alone.
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ view\ 12*)
+    printf '{"body":"Intro.\\n\\n<!-- git-stk:description -->\\nStale.\\n<!-- /git-stk:description -->"}\n'
+    ;;
+  pr\ edit\ 12\ --body*)
+    printf '%s\n' "$*" > edit-body-12.txt
+    ;;
+  *feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["submit", "-d", ""])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("cleared description in #12"));
+
+    let body = fs::read_to_string(repo.path().join("edit-body-12.txt")).expect("edited body");
+    assert!(body.contains("Intro."));
+    assert!(!body.contains("git-stk:description"));
+    assert!(!body.contains("Stale."));
+}
+
+#[test]
+fn submit_stack_desc_targets_only_the_current_branch() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ view\ 12*)
+    printf '{"body":""}\n'
+    ;;
+  pr\ view\ 13*)
+    printf '{"body":""}\n'
+    ;;
+  pr\ edit\ 12\ --body*)
+    printf '%s\n=====\n' "$*" >> edit-body-12.log
+    ;;
+  pr\ edit\ 13\ --body*)
+    printf '%s\n=====\n' "$*" >> edit-body-13.log
+    ;;
+  pr\ list*feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]
+JSON
+    ;;
+  pr\ list*feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    // Standing on the leaf: the description belongs to its review alone.
+    repo.stack()
+        .args(["submit", "--stack", "-d", "Top summary."])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("set description in #13"));
+
+    let top = fs::read_to_string(repo.path().join("edit-body-13.log")).expect("top edits");
+    assert!(
+        top.contains("<!-- git-stk:description -->\nTop summary.\n<!-- /git-stk:description -->")
+    );
+    let bottom = fs::read_to_string(repo.path().join("edit-body-12.log")).expect("bottom edits");
+    assert!(!bottom.contains("git-stk:description"));
+}
+
+#[test]
 fn submit_stack_preserves_merged_ledger_entries() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
