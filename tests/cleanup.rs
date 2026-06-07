@@ -124,6 +124,114 @@ esac
 }
 
 #[test]
+fn cleanup_recovers_base_when_merged_parent_branch_is_gone() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+    repo.git(["switch", "main"]);
+    // The merged parent was deleted out-of-band: feature/b now points at a
+    // branch that no longer exists, and only the review remembers its base.
+    repo.git(["branch", "-D", "feature/a"]);
+    repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
+
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  *feature/a\ --state\ merged*)
+    cat <<'JSON'
+[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
+JSON
+    ;;
+  *feature/a*)
+    printf '[]\n'
+    ;;
+  pr\ edit\ 13\ --base*)
+    printf '%s\n' "$*" > edit-base-13.txt
+    ;;
+  *feature/b*)
+    cat <<'JSON'
+[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    // Dry run announces the retarget without writing anything.
+    repo.stack()
+        .args(["cleanup", "--dry-run", "feature/b"])
+        .env("PATH", path.clone())
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "would retarget feature/b -> main",
+        ));
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
+        "feature/a"
+    );
+
+    repo.stack()
+        .args(["cleanup", "feature/b"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "feature/b: parent feature/a is gone, but review #12 merged into main",
+        ))
+        .stdout(predicates::str::contains("will retarget feature/b -> main"))
+        .stdout(predicates::str::contains(
+            "will update review feature/b -> main (#13)",
+        ))
+        .stdout(predicates::str::contains(
+            "cleanup complete: 0 cleaned, 1 skipped, 1 retargeted",
+        ));
+
+    let recorded =
+        std::fs::read_to_string(repo.path().join("edit-base-13.txt")).expect("edit base args");
+    assert_eq!(recorded.trim(), "pr edit 13 --base main");
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
+        "main"
+    );
+}
+
+#[test]
+fn cleanup_leaves_a_gone_parent_alone_without_a_merged_review() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["switch", "-c", "feature/b"]);
+    repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
+
+    // No review for the missing parent: recovery must defer to repair.
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+printf '[]\n'
+"##,
+    );
+
+    repo.stack()
+        .args(["cleanup", "feature/b"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("retarget").not());
+
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
+        "feature/a"
+    );
+}
+
+#[test]
 fn cleanup_skips_closed_reviews_with_their_state() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);

@@ -33,12 +33,16 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool, keep_branch: bool) -> Result
         .map_or_else(git::current_branch, Ok)?;
     let branches = stack::branch_and_descendants(&branch)?;
     let current_branch = git::current_branch()?;
+    let local_branches = git::local_branches()?;
     let provider = detect_provider()?;
     let review_provider = review_provider(provider.kind);
     let mut cleaned = 0;
     let mut skipped = 0;
+    let mut retargeted = 0;
 
     for branch in branches {
+        retargeted +=
+            recover_deleted_parent(review_provider.as_ref(), &branch, &local_branches, dry_run)?;
         // Closed-inclusive so a review closed without merging gets a
         // truthful skip instead of "no review found". Only merged reviews
         // are ever cleaned: a closed review's work is not in the trunk.
@@ -59,8 +63,59 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool, keep_branch: bool) -> Result
         cleaned += 1;
     }
 
-    println!("cleanup complete: {cleaned} cleaned, {skipped} skipped");
+    let retargeted_note = if retargeted > 0 {
+        format!(", {retargeted} retargeted")
+    } else {
+        String::new()
+    };
+    println!("cleanup complete: {cleaned} cleaned, {skipped} skipped{retargeted_note}");
     Ok(())
+}
+
+/// A merged parent deleted remotely (and pruned locally) leaves `branch`
+/// pointing at nothing, but the merged review still remembers its base.
+/// Retarget past the gap; the recorded fork point stays valid because it
+/// lives in the branch's own history. Returns how many branches moved.
+fn recover_deleted_parent(
+    review_provider: &dyn ReviewProvider,
+    branch: &str,
+    local_branches: &[String],
+    dry_run: bool,
+) -> Result<usize> {
+    let Some(parent) = stack::parent_for_branch(branch)? else {
+        return Ok(0);
+    };
+    if local_branches.contains(&parent) {
+        return Ok(0);
+    }
+
+    // Provider lookups go by ref name, so the review outlives the branch.
+    // Best effort: anything unresolved stays for `git stk repair`.
+    let Ok(Some(review)) = review_provider.review_for_branch(&parent) else {
+        return Ok(0);
+    };
+    if review.branch != parent
+        || review.state != ReviewState::Merged
+        || review.base == *branch
+        || !local_branches.contains(&review.base)
+    {
+        return Ok(0);
+    }
+
+    println!(
+        "{branch}: parent {parent} is gone, but review {} merged into {}",
+        review.id, review.base
+    );
+    println!(
+        "{} retarget {branch} -> {}",
+        if dry_run { "would" } else { "will" },
+        review.base
+    );
+    update_child_review_base(review_provider, branch, &review.base, dry_run)?;
+    if !dry_run {
+        stack::set_parent_for_branch(branch, &review.base)?;
+    }
+    Ok(1)
 }
 
 pub(crate) fn cleanup_merged_branch(
