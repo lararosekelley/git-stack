@@ -20,6 +20,9 @@ pub struct Restack {
     /// Do not push rebased branches, overriding stk.pushOnRestack.
     #[arg(long, action = ArgAction::SetTrue)]
     no_push: bool,
+    /// Print the rebase plan without rebasing anything.
+    #[arg(long, action = ArgAction::SetTrue)]
+    dry_run: bool,
 }
 
 impl Run for Restack {
@@ -27,6 +30,7 @@ impl Run for Restack {
         crate::stack::restack(
             UpdateRefsMode::from_flags(self.update_refs, self.no_update_refs),
             PushMode::from_flags(self.push, self.no_push),
+            self.dry_run,
         )
     }
 }

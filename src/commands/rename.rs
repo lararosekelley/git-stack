@@ -1,9 +1,11 @@
 use anyhow::Result;
+use clap::ArgAction;
 use clap_complete::engine::ArgValueCompleter;
 
 use crate::commands::Run;
 use crate::completions;
 use crate::providers::{detect_provider, review_provider};
+use crate::style;
 use crate::{git, stack};
 
 /// Rename a branch and retarget its stack children.
@@ -17,6 +19,9 @@ pub struct Rename {
         add = ArgValueCompleter::new(completions::branch_candidates),
     )]
     names: Vec<String>,
+    /// Print the rename and retargets without changing anything.
+    #[arg(long, action = ArgAction::SetTrue)]
+    dry_run: bool,
 }
 
 impl Run for Rename {
@@ -26,12 +31,12 @@ impl Run for Rename {
             [old, new] => (old.clone(), new.clone()),
             _ => unreachable!("clap enforces one or two names"),
         };
-        rename(&old, &new)
+        rename(&old, &new, self.dry_run)
     }
 }
 
-fn rename(old: &str, new: &str) -> Result<()> {
-    stack::rename_branch(old, new)?;
+fn rename(old: &str, new: &str, dry_run: bool) -> Result<()> {
+    stack::rename_branch(old, new, dry_run)?;
 
     // Best effort: an existing review still heads the old branch name, and
     // the platform does not follow local renames.
@@ -40,8 +45,9 @@ fn rename(old: &str, new: &str) -> Result<()> {
         if let Ok(Some(review)) = review_provider.review_for_branch(old)
             && review.branch == *old
         {
-            println!(
-                "warning: review {} still heads {old}; submitting {new} will open a new review",
+            anstream::println!(
+                "{} review {} still heads {old}; submitting {new} will open a new review",
+                style::paint(style::WARN, "warning:"),
                 review.id
             );
         }

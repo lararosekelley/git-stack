@@ -183,7 +183,7 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
     if dry_run {
         println!("would restack the remaining stack");
     } else if !survivors.is_empty() {
-        stack::restack(UpdateRefsMode::Config, push_mode)?;
+        stack::restack(UpdateRefsMode::Config, push_mode, false)?;
     }
 
     // 8. Where to look next.

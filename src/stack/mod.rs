@@ -85,15 +85,30 @@ pub fn detach_branch(branch: Option<&str>) -> Result<()> {
 /// Rename a branch and keep the stack intact. Git moves the branch's own
 /// metadata with the rename; children pointing at the old name are
 /// retargeted here.
-pub fn rename_branch(old: &str, new: &str) -> Result<()> {
+pub fn rename_branch(old: &str, new: &str, dry_run: bool) -> Result<()> {
     let children = children_for_branch(old)?;
-    git::rename_branch(old, new)?;
-    anstream::println!("renamed {} -> {}", style::branch(old), style::branch(new));
+
+    if !dry_run {
+        git::rename_branch(old, new)?;
+    }
+    anstream::println!(
+        "{} {} -> {}",
+        if dry_run { "would rename" } else { "renamed" },
+        style::branch(old),
+        style::branch(new)
+    );
 
     for child in &children {
-        set_parent_for_branch(child, new)?;
+        if !dry_run {
+            set_parent_for_branch(child, new)?;
+        }
         anstream::println!(
-            "retargeted {} -> {}",
+            "{} {} -> {}",
+            if dry_run {
+                "would retarget"
+            } else {
+                "retargeted"
+            },
             style::branch(child),
             style::branch(new)
         );

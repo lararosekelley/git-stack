@@ -13,7 +13,7 @@ use crate::style;
 
 const STATE_FILE: &str = "stack-state";
 
-pub fn restack(update_refs_mode: UpdateRefsMode, push_mode: PushMode) -> Result<()> {
+pub fn restack(update_refs_mode: UpdateRefsMode, push_mode: PushMode, dry_run: bool) -> Result<()> {
     let current = git::current_branch()?;
     let parents = parent_map()?;
     // Restack the whole stack containing the current branch, from anywhere
@@ -29,9 +29,71 @@ pub fn restack(update_refs_mode: UpdateRefsMode, push_mode: PushMode) -> Result<
     let update_refs = resolve_update_refs(update_refs_mode)?;
     let push = settings::push_enabled(push_mode, settings::PUSH_ON_RESTACK_KEY)?;
 
+    if dry_run {
+        return print_restack_plan(&branches, &parents, update_refs, push);
+    }
+
     clear_state()?;
     let all = branches.clone();
     restack_branches(branches, &parents, update_refs, push, &all)
+}
+
+/// The plan, read-only: which branches would rebase and which already sit
+/// on their parents.
+fn print_restack_plan(
+    branches: &[String],
+    parents: &BTreeMap<String, String>,
+    update_refs: bool,
+    push: bool,
+) -> Result<()> {
+    for branch in branches {
+        let Some(parent) = parents.get(branch) else {
+            bail!("{branch} has no stack parent");
+        };
+
+        if up_to_date(branch, parent)? {
+            anstream::println!(
+                "{} already up to date with {}",
+                style::branch(branch),
+                style::branch(parent)
+            );
+        } else {
+            anstream::println!(
+                "would rebase {} onto {}{}",
+                style::branch(branch),
+                style::branch(parent),
+                if update_refs {
+                    " with --update-refs"
+                } else {
+                    ""
+                }
+            );
+        }
+    }
+
+    if push {
+        anstream::println!(
+            "would push {} to {}",
+            style::branch(&branches.join(" ")),
+            settings::remote()?
+        );
+    }
+    Ok(())
+}
+
+/// The recorded fork point, when it is still an ancestor of the branch.
+fn valid_base(branch: &str) -> Result<Option<String>> {
+    Ok(match base_of(branch)? {
+        Some(base) if git::is_ancestor(&base, branch).unwrap_or(false) => Some(base),
+        _ => None,
+    })
+}
+
+/// Sitting exactly on the parent tip with a fresh fork point: nothing to do.
+fn up_to_date(branch: &str, parent: &str) -> Result<bool> {
+    let parent_tip = git::rev_parse(parent)?;
+    Ok(valid_base(branch)?.as_deref() == Some(parent_tip.as_str())
+        && git::is_ancestor(parent, branch).unwrap_or(false))
 }
 
 pub fn continue_restack() -> Result<()> {
@@ -99,18 +161,12 @@ fn restack_branches(
         // that landed upstream via squash or rebase merges are not repeated.
         // A base that is no longer an ancestor (stale or garbage) falls back
         // to a plain rebase.
-        let base = match base_of(branch)? {
-            Some(base) if git::is_ancestor(&base, branch).unwrap_or(false) => Some(base),
-            _ => None,
-        };
+        let base = valid_base(branch)?;
 
         // Already sitting exactly on the parent tip with a fresh fork point:
         // skip the rebase entirely. (git rebase --update-refs would otherwise
         // replay and rewrite identical commits with new hashes.)
-        let parent_tip = git::rev_parse(parent)?;
-        if base.as_deref() == Some(parent_tip.as_str())
-            && git::is_ancestor(parent, branch).unwrap_or(false)
-        {
+        if up_to_date(branch, parent)? {
             anstream::println!(
                 "{} already up to date with {}",
                 style::branch(branch),

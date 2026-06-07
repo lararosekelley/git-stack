@@ -108,6 +108,58 @@ fn restack_can_opt_out_of_update_refs() {
 }
 
 #[test]
+fn restack_dry_run_prints_the_plan_without_rebasing() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a.txt", "a\nmore\n", "a moves on");
+
+    let before = repo.git(["rev-parse", "feature/b"]);
+    repo.stack()
+        .args(["restack", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "feature/a already up to date with main",
+        ))
+        .stdout(predicates::str::contains(
+            "would rebase feature/b onto feature/a",
+        ));
+
+    assert_eq!(repo.git(["rev-parse", "feature/b"]), before);
+    assert!(!repo.path().join(".git/stack-state").exists());
+}
+
+#[test]
+fn restack_dry_run_reports_update_refs_and_push() {
+    let repo = TestRepo::new();
+    if !repo.supports_update_refs() {
+        return;
+    }
+    repo.git(["config", "stk.updateRefs", "true"]);
+    repo.git(["config", "stk.pushOnRestack", "true"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.git(["switch", "main"]);
+    repo.commit_file("main.txt", "main\n", "main moves");
+    repo.git(["switch", "feature/a"]);
+
+    repo.stack()
+        .args(["restack", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "would rebase feature/a onto main with --update-refs",
+        ))
+        .stdout(predicates::str::contains("would push feature/a to origin"));
+}
+
+#[test]
 fn restack_is_quiet_by_default_and_loud_with_verbose() {
     let repo = TestRepo::new();
 

@@ -112,6 +112,33 @@ esac
 }
 
 #[test]
+fn rename_dry_run_previews_without_renaming() {
+    let repo = TestRepo::new();
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+
+    repo.stack()
+        .args(["rename", "--dry-run", "feature/a", "feature/a2"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "would rename feature/a -> feature/a2",
+        ))
+        .stdout(predicates::str::contains(
+            "would retarget feature/b -> feature/a2",
+        ));
+
+    assert!(
+        repo.git(["branch", "--list", "feature/a"])
+            .contains("feature/a")
+    );
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
+        "feature/a"
+    );
+}
+
+#[test]
 fn rename_fails_when_target_exists_and_changes_nothing() {
     let repo = TestRepo::new();
     repo.stack().args(["new", "feature/a"]).assert().success();

@@ -96,7 +96,7 @@ git stk children [branch]
 git stk list [--markdown]
 git stk adopt <branch> --parent <parent>
 git stk detach [branch]
-git stk rename [branch] <new-name>
+git stk rename [branch] <new-name> [--dry-run]
 ```
 
 `rename` is `git branch -m` plus stack upkeep: children pointing at the old name are retargeted, and it
@@ -105,9 +105,9 @@ warns when an open review still heads the old branch (platforms do not follow lo
 `list` prints the stack leaf-first, like a pile sitting on its base, with the trunk labeled:
 
 ```text
-    feature/b *
-  feature/a
-main (trunk)
+    ◉ feature/b
+  ○ feature/a
+○ main (trunk)
 ```
 
 `status` and `list` append `hint:` lines pointing at the next command when there is one: `restack` when a
@@ -133,7 +133,7 @@ git stk up [branch]   # towards the top of the stack (children; picker at forks)
 git stk down          # towards the trunk (parent)
 git stk top           # jump to the leaf of the stack
 git stk bottom        # jump to the branch just above the trunk
-git stk restack [--update-refs | --no-update-refs] [--push | --no-push]
+git stk restack [--update-refs | --no-update-refs] [--push | --no-push] [--dry-run]
 git stk continue
 git stk abort
 ```
@@ -148,8 +148,8 @@ git stk review [branch]
 git stk sync [--dry-run] [--push | --no-push]
 git stk merge [-y] [--auto | --all] [--dry-run]
 git stk repair [--dry-run]
-git stk submit [branch] [--dry-run] [--push | --no-push]
-git stk submit [--stack | --no-stack] [--dry-run] [--push | --no-push]
+git stk submit [branch] [-d <desc>] [--dry-run] [--push | --no-push]
+git stk submit [--stack | --no-stack] [-d <desc>] [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--keep-branch]
 ```
 
