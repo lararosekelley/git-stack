@@ -117,6 +117,66 @@ fn up_requires_branch_when_multiple_children_exist() {
 }
 
 #[test]
+fn up_picker_chooses_among_multiple_children() {
+    let repo = TestRepo::new();
+
+    repo.git(["switch", "-c", "feature/a"]);
+    repo.git(["switch", "main"]);
+    repo.git(["switch", "-c", "feature/b"]);
+    repo.git(["switch", "main"]);
+    repo.stack()
+        .args(["adopt", "feature/a", "--parent", "main"])
+        .assert()
+        .success();
+    repo.stack()
+        .args(["adopt", "feature/b", "--parent", "main"])
+        .assert()
+        .success();
+
+    // Children list alphabetically: 2 picks feature/b.
+    repo.stack()
+        .arg("up")
+        .write_stdin("2\n")
+        .assert()
+        .success()
+        .stderr(predicates::str::contains("1."))
+        .stderr(predicates::str::contains("pick [1-2]:"));
+    assert_eq!(repo.git(["branch", "--show-current"]), "feature/b");
+
+    // An answer off the menu falls back to the error.
+    repo.git(["switch", "main"]);
+    repo.stack()
+        .arg("up")
+        .write_stdin("9\n")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "choose one with `git stk up <branch>`",
+        ));
+    assert_eq!(repo.git(["branch", "--show-current"]), "main");
+}
+
+#[test]
+fn top_picker_resolves_the_fork_and_keeps_climbing() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.git(["switch", "feature/a"]);
+    repo.stack().args(["new", "feature/c"]).assert().success();
+    repo.stack().args(["new", "feature/d"]).assert().success();
+    repo.git(["switch", "main"]);
+
+    // Pick the feature/c side of the fork; the climb continues to its leaf.
+    repo.stack()
+        .arg("top")
+        .write_stdin("2\n")
+        .assert()
+        .success();
+    assert_eq!(repo.git(["branch", "--show-current"]), "feature/d");
+}
+
+#[test]
 fn top_and_bottom_jump_across_the_stack() {
     let repo = TestRepo::new();
 
