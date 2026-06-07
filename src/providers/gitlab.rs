@@ -63,12 +63,17 @@ impl ReviewProvider for GitLabProvider {
         )
     }
 
-    fn merge_review(&self, review: &ReviewRequest, strategy: &str) -> Result<String> {
+    fn merge_review(&self, review: &ReviewRequest, strategy: &str, auto: bool) -> Result<String> {
         let mut args = vec!["mr", "merge", review.id_value()];
         match strategy {
             "rebase" => args.push("--rebase"),
             "merge" => {}
             _ => args.push("--squash"),
+        }
+        // glab schedules on pending pipelines by default; --auto just makes
+        // the intent explicit. Either way the caller checks what happened.
+        if auto {
+            args.push("--auto-merge");
         }
         command_output("glab", &args)
     }

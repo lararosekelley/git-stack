@@ -18,15 +18,19 @@ pub struct Merge {
     /// Skip the confirmation prompt.
     #[arg(long, short = 'y', action = ArgAction::SetTrue)]
     yes: bool,
+    /// Schedule the merge for when required checks pass instead of merging
+    /// now.
+    #[arg(long, action = ArgAction::SetTrue)]
+    auto: bool,
 }
 
 impl Run for Merge {
     fn run(self) -> Result<()> {
-        merge(self.dry_run, self.yes)
+        merge(self.dry_run, self.yes, self.auto)
     }
 }
 
-fn merge(dry_run: bool, yes: bool) -> Result<()> {
+fn merge(dry_run: bool, yes: bool, auto: bool) -> Result<()> {
     let current = crate::git::current_branch()?;
     let root = stack::stack_root(&current)?;
     let trunk = stack::trunk_branch(&crate::git::local_branches()?);
@@ -70,6 +74,11 @@ fn merge(dry_run: bool, yes: bool) -> Result<()> {
     }
 
     let strategy = settings::merge_strategy()?;
+    let mode = if auto {
+        format!("{strategy}, auto")
+    } else {
+        strategy.clone()
+    };
     let label = if review.title.is_empty() {
         review.id.clone()
     } else {
@@ -77,14 +86,14 @@ fn merge(dry_run: bool, yes: bool) -> Result<()> {
     };
 
     if dry_run {
-        println!("would merge {label} into {} ({strategy})", review.base);
+        println!("would merge {label} into {} ({mode})", review.base);
         println!("would sync afterwards");
         return Ok(());
     }
 
     if !yes
         && !confirm(&format!(
-            "merge {label} into {} ({strategy})? [y/N] ",
+            "merge {label} into {} ({mode})? [y/N] ",
             review.base
         ))?
     {
@@ -92,12 +101,37 @@ fn merge(dry_run: bool, yes: bool) -> Result<()> {
         return Ok(());
     }
 
-    let output = review_provider.merge_review(&review, &strategy)?;
+    let output = match review_provider.merge_review(&review, &strategy, auto) {
+        Ok(output) => output,
+        Err(error) => {
+            // gh refuses outright when required checks are not green.
+            let text = error.to_string().to_lowercase();
+            if text.contains("status check") || text.contains("not mergeable") {
+                eprintln!(
+                    "hint: required checks may not be green yet - rerun `git stk merge` \
+                     when they pass, or schedule with `git stk merge --auto`"
+                );
+            }
+            return Err(error);
+        }
+    };
     if !output.is_empty() {
         println!("{output}");
     }
-    println!("merged {label}");
 
-    // Reconcile everything the merge changed: fetch, clean up, restack, push.
-    sync(false, PushMode::Config)
+    // gh --auto and glab's default auto-merge schedule the merge instead of
+    // performing it; only a review that actually reads merged starts the
+    // sync.
+    match review_provider.review_for_branch(&bottom)? {
+        Some(after) if after.state == ReviewState::Merged => {
+            println!("merged {label}");
+            // Reconcile everything the merge changed: fetch, clean up,
+            // restack, push.
+            sync(false, PushMode::Config)
+        }
+        _ => {
+            println!("merge scheduled for {label}; rerun `git stk sync` once checks pass");
+            Ok(())
+        }
+    }
 }

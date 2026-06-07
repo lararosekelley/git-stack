@@ -46,13 +46,17 @@ impl ReviewProvider for GitHubProvider {
         command_output("gh", &["pr", "edit", review.id_value(), "--body", body])
     }
 
-    fn merge_review(&self, review: &ReviewRequest, strategy: &str) -> Result<String> {
+    fn merge_review(&self, review: &ReviewRequest, strategy: &str, auto: bool) -> Result<String> {
         let flag = match strategy {
             "rebase" => "--rebase",
             "merge" => "--merge",
             _ => "--squash",
         };
-        command_output("gh", &["pr", "merge", review.id_value(), flag])
+        let mut args = vec!["pr", "merge", review.id_value(), flag];
+        if auto {
+            args.push("--auto");
+        }
+        command_output("gh", &args)
     }
 }
 
