@@ -26,19 +26,20 @@ impl ReviewProvider for GitLabProvider {
         list_review(branch, Some("--closed"))
     }
 
-    fn create_review(&self, branch: &str, base: &str) -> Result<String> {
-        command_output(
-            "glab",
-            &[
-                "mr",
-                "create",
-                "--source-branch",
-                branch,
-                "--target-branch",
-                base,
-                "--fill",
-            ],
-        )
+    fn create_review(&self, branch: &str, base: &str, draft: bool) -> Result<String> {
+        let mut args = vec![
+            "mr",
+            "create",
+            "--source-branch",
+            branch,
+            "--target-branch",
+            base,
+            "--fill",
+        ];
+        if draft {
+            args.push("--draft");
+        }
+        command_output("glab", &args)
     }
 
     fn update_review_base(&self, review: &ReviewRequest, base: &str) -> Result<String> {

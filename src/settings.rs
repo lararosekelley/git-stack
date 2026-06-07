@@ -12,6 +12,7 @@ pub const PUSH_ON_RESTACK_KEY: &str = "stk.pushOnRestack";
 pub const PUSH_ON_SUBMIT_KEY: &str = "stk.pushOnSubmit";
 pub const SUBMIT_STACK_KEY: &str = "stk.submitStack";
 pub const MERGE_STRATEGY_KEY: &str = "stk.mergeStrategy";
+pub const SUBMIT_DRAFT_KEY: &str = "stk.submitDraft";
 pub const NO_UPDATE_CHECK_KEY: &str = "stk.noUpdateCheck";
 pub const DEFAULT_REMOTE: &str = "origin";
 
@@ -25,6 +26,7 @@ pub const SETTINGS: &[(&str, &str)] = &[
     (PUSH_ON_SUBMIT_KEY, "false"),
     (SUBMIT_STACK_KEY, "false"),
     (MERGE_STRATEGY_KEY, "squash"),
+    (SUBMIT_DRAFT_KEY, "false"),
     (NO_UPDATE_CHECK_KEY, "false"),
 ];
 

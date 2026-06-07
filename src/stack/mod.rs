@@ -166,6 +166,26 @@ pub fn branch_and_descendants(branch: &str) -> Result<Vec<String>> {
     Ok(branches)
 }
 
+/// The stack path from the bottom up to (and including) `branch`,
+/// parent-first; descendants above it are left out.
+pub fn path_from_root(branch: &str) -> Result<Vec<String>> {
+    let trunk = trunk_branch(&git::local_branches()?);
+    let mut path = vec![branch.to_owned()];
+    let mut seen = BTreeSet::from([branch.to_owned()]);
+
+    let mut cursor = branch.to_owned();
+    while let Some(parent) = parent_of(&cursor)? {
+        if Some(&parent) == trunk.as_ref() || !seen.insert(parent.clone()) {
+            break;
+        }
+        path.push(parent.clone());
+        cursor = parent;
+    }
+
+    path.reverse();
+    Ok(path)
+}
+
 /// (branch, parent) pairs for the branches that have a stack parent;
 /// branches without one are skipped.
 pub fn branch_parents(branches: &[String]) -> Result<Vec<(String, String)>> {

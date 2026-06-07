@@ -26,11 +26,12 @@ impl ReviewProvider for GitHubProvider {
         list_review(branch, Some("closed"))
     }
 
-    fn create_review(&self, branch: &str, base: &str) -> Result<String> {
-        command_output(
-            "gh",
-            &["pr", "create", "--head", branch, "--base", base, "--fill"],
-        )
+    fn create_review(&self, branch: &str, base: &str, draft: bool) -> Result<String> {
+        let mut args = vec!["pr", "create", "--head", branch, "--base", base, "--fill"];
+        if draft {
+            args.push("--draft");
+        }
+        command_output("gh", &args)
     }
 
     fn update_review_base(&self, review: &ReviewRequest, base: &str) -> Result<String> {

@@ -27,7 +27,7 @@ impl ReviewProvider for DemoProvider {
         Ok(find(&state, branch, &["open", "merged", "closed"]).map(review_from))
     }
 
-    fn create_review(&self, branch: &str, base: &str) -> Result<String> {
+    fn create_review(&self, branch: &str, base: &str, draft: bool) -> Result<String> {
         let mut state = load()?;
         if find(&state, branch, &["open"]).is_some() {
             bail!("demo review for {branch} already exists");
@@ -46,6 +46,7 @@ impl ReviewProvider for DemoProvider {
                 "state": "open",
                 "title": title,
                 "body": "",
+                "draft": draft,
             }));
         save(&state)?;
         Ok(format!("demo://review/{id}"))
