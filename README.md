@@ -115,6 +115,8 @@ Navigation and re-stacking:
 ```sh
 git stk up [branch]   # towards the top of the stack (children)
 git stk down          # towards the trunk (parent)
+git stk top           # jump to the leaf of the stack
+git stk bottom        # jump to the branch just above the trunk
 git stk restack [--update-refs | --no-update-refs] [--push | --no-push]
 git stk continue
 git stk abort

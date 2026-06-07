@@ -108,6 +108,79 @@ fn up_requires_branch_when_multiple_children_exist() {
 }
 
 #[test]
+fn top_and_bottom_jump_across_the_stack() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.stack().args(["new", "feature/c"]).assert().success();
+
+    repo.stack().arg("bottom").assert().success();
+    assert_eq!(repo.git(["branch", "--show-current"]), "feature/a");
+
+    repo.stack().arg("top").assert().success();
+    assert_eq!(repo.git(["branch", "--show-current"]), "feature/c");
+
+    // Already there: a friendly no-op, not an error.
+    repo.stack()
+        .arg("top")
+        .assert()
+        .success()
+        .stdout("feature/c is already at the top of the stack\n");
+}
+
+#[test]
+fn bottom_from_the_trunk_follows_a_single_stack() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.git(["switch", "main"]);
+
+    repo.stack().arg("bottom").assert().success();
+    assert_eq!(repo.git(["branch", "--show-current"]), "feature/a");
+}
+
+#[test]
+fn top_stops_at_a_fork_and_lists_the_choices() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.git(["switch", "feature/a"]);
+    repo.stack().args(["new", "feature/c"]).assert().success();
+    repo.git(["switch", "main"]);
+
+    repo.stack()
+        .arg("top")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "feature/a has multiple stack children",
+        ))
+        .stderr(predicates::str::contains(
+            "walk up from feature/a with `git stk up <branch>`",
+        ));
+}
+
+#[test]
+fn top_and_bottom_require_a_stack() {
+    let repo = TestRepo::new();
+
+    repo.stack()
+        .arg("top")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("main is not in a stack"));
+
+    repo.stack()
+        .arg("bottom")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("main has no stacked branches"));
+}
+
+#[test]
 fn new_and_restack_record_stack_base() {
     let repo = TestRepo::new();
 

@@ -9,6 +9,7 @@ pub trait Run {
 }
 
 pub mod adopt;
+pub mod bottom;
 pub mod children;
 pub mod cleanup;
 pub mod completions;
@@ -28,5 +29,6 @@ pub mod setup;
 pub mod status;
 pub mod submit;
 pub mod sync;
+pub mod top;
 pub mod up;
 pub mod upgrade;
