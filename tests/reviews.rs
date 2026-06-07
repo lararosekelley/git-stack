@@ -1,3 +1,5 @@
+use std::fs;
+
 mod common;
 
 use common::TestRepo;
@@ -365,6 +367,18 @@ fn sync_advances_the_merge_loop_end_to_end() {
         "gh",
         r##"#!/usr/bin/env sh
 case "$*" in
+  pr\ view\ 12*)
+    printf '{"body":""}\n'
+    ;;
+  pr\ view\ 13*)
+    printf '{"body":""}\n'
+    ;;
+  pr\ edit\ 12\ --body*)
+    printf '%s\n' "$*" > edit-body-12.txt
+    ;;
+  pr\ edit\ 13\ --body*)
+    printf '%s\n' "$*" > edit-body-13.txt
+    ;;
   *feature/a\ --state\ merged*)
     cat <<'JSON'
 [{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
@@ -394,9 +408,27 @@ esac
         .assert()
         .success()
         .stdout(predicates::str::contains("feature/a: review #12 is merged"))
+        .stdout(predicates::str::contains("updated stack note in #12"))
+        .stdout(predicates::str::contains("updated stack note in #13"))
         .stdout(predicates::str::contains(
             "next up: feature/b -> #13 https://github.com/owner/repo/pull/13",
         ));
+
+    // The overview was refreshed mid-loop: the merged entry is restyled in
+    // the surviving review (and in its own), not dropped.
+    let survivor = fs::read_to_string(repo.path().join("edit-body-13.txt")).expect("survivor");
+    assert!(
+        survivor.contains(
+            "- \u{1F7E2} [B work (#13)](https://github.com/owner/repo/pull/13) \u{1F448}"
+        )
+    );
+    assert!(survivor.contains(
+        "- \u{1F7E3} ~~[A work (#12)](https://github.com/owner/repo/pull/12)~~ (merged)"
+    ));
+    let merged_body = fs::read_to_string(repo.path().join("edit-body-12.txt")).expect("merged");
+    assert!(merged_body.contains(
+        "- \u{1F7E3} ~~[A work (#12)](https://github.com/owner/repo/pull/12)~~ (merged) \u{1F448}"
+    ));
 
     // Local main was fetched forward to the squash commit.
     assert_eq!(
@@ -423,6 +455,74 @@ esac
     assert_eq!(
         repo.remote_sha(&bare, "feature/b"),
         repo.git(["rev-parse", "feature/b"])
+    );
+}
+
+#[test]
+fn sync_styles_closed_reviews_in_the_stack_overview() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.stack().args(["new", "feature/b"]).assert().success();
+
+    // feature/b's review was closed on the platform: invisible to the sync
+    // classification, but the overview must show it red rather than drop it.
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ view\ 12*)
+    printf '{"body":""}\n'
+    ;;
+  pr\ view\ 13*)
+    printf '{"body":""}\n'
+    ;;
+  pr\ edit\ 12\ --body*)
+    printf '%s\n' "$*" > edit-body-12.txt
+    ;;
+  pr\ edit\ 13\ --body*)
+    printf '%s\n' "$*" > edit-body-13.txt
+    ;;
+  *feature/b\ --state\ closed*)
+    cat <<'JSON'
+[{"number":13,"state":"CLOSED","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]
+JSON
+    ;;
+  *feature/b*)
+    printf '[]\n'
+    ;;
+  *feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.git(["switch", "feature/a"]);
+    repo.stack()
+        .arg("sync")
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "skipped feature/b: no github review found",
+        ))
+        .stdout(predicates::str::contains("updated stack note in #12"))
+        .stdout(predicates::str::contains("updated stack note in #13"));
+
+    let bottom = fs::read_to_string(repo.path().join("edit-body-12.txt")).expect("bottom body");
+    assert!(bottom.contains(
+        "- \u{1F534} ~~[B work (#13)](https://github.com/owner/repo/pull/13)~~ (closed)"
+    ));
+    assert!(
+        bottom.contains(
+            "- \u{1F7E2} [A work (#12)](https://github.com/owner/repo/pull/12) \u{1F448}"
+        )
     );
 }
 
