@@ -188,6 +188,31 @@ fn undo_refuses_with_a_dirty_worktree() {
 }
 
 #[test]
+fn errors_are_prefixed_and_colored() {
+    let repo = TestRepo::new();
+
+    // A failing command: no stack to merge. Captured (non-tty) stderr is
+    // plain, but carries the `error:` prefix and exits nonzero.
+    repo.stack()
+        .arg("merge")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "error: no stacked branches to merge",
+        ))
+        .stderr(predicates::str::contains("\u{1b}[").not());
+
+    // Forced color paints the prefix red.
+    repo.stack()
+        .arg("merge")
+        .env("CLICOLOR_FORCE", "1")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("\u{1b}["))
+        .stderr(predicates::str::contains("error:"));
+}
+
+#[test]
 fn view_reports_no_review_without_one() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "demo"]);

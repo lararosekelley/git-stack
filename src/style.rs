@@ -16,6 +16,8 @@ pub const DIM: Style = Style::new().dimmed();
 pub const HINT: Style = AnsiColor::Cyan.on_default();
 /// The `warning:` prefix.
 pub const WARN: Style = AnsiColor::Yellow.on_default();
+/// The `error:` prefix.
+pub const ERROR: Style = AnsiColor::Red.on_default().bold();
 
 /// Review states, matching the ledger emoji: green open, purple merged,
 /// red closed.
@@ -50,6 +52,11 @@ pub fn warn(text: &str) -> String {
 /// The shared `hint:` prefix.
 pub fn hint_prefix() -> String {
     paint(HINT, "hint:")
+}
+
+/// The shared `error:` prefix.
+pub fn error_prefix() -> String {
+    paint(ERROR, "error:")
 }
 
 /// A review state in its color.
