@@ -87,6 +87,10 @@ impl ReviewProvider for GitHubProvider {
     fn mark_ready(&self, review: &ReviewRequest) -> Result<String> {
         command_output("gh", &["pr", "ready", review.id_value()])
     }
+
+    fn open_review(&self, review: &ReviewRequest) -> Result<String> {
+        command_output("gh", &["pr", "view", review.id_value(), "--web"])
+    }
 }
 
 fn list_review(branch: &str, state: Option<&str>) -> Result<Option<ReviewRequest>> {

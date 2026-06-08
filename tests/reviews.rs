@@ -763,3 +763,38 @@ esac
 
     assert_eq!(repo.git(["branch", "--show-current"]), "main");
 }
+
+#[test]
+fn view_opens_the_review_in_the_browser() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "github"]);
+    repo.git(["config", "branch.feature/a.stkParent", "main"]);
+    let path = repo.fake_cli(
+        "gh",
+        r##"#!/usr/bin/env sh
+case "$*" in
+  pr\ view\ 12\ --web)
+    printf '%s\n' "$*" > view-args.txt
+    ;;
+  *feature/a*)
+    cat <<'JSON'
+[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
+JSON
+    ;;
+  *)
+    printf '[]\n'
+    ;;
+esac
+"##,
+    );
+
+    repo.stack()
+        .args(["view", "feature/a"])
+        .env("PATH", path)
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("opening #12"));
+
+    let recorded = std::fs::read_to_string(repo.path().join("view-args.txt")).expect("view args");
+    assert_eq!(recorded.trim(), "pr view 12 --web");
+}

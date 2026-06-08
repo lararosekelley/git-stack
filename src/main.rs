@@ -45,6 +45,7 @@ fn main() -> Result<()> {
         Command::Abort(command) => command.run(),
         Command::Provider(command) => command.run(),
         Command::Review(command) => command.run(),
+        Command::View(command) => command.run(),
         Command::Sync(command) => command.run(),
         Command::Merge(command) => command.run(),
         Command::Repair(command) => command.run(),

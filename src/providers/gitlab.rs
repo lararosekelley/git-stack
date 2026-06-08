@@ -106,6 +106,10 @@ impl ReviewProvider for GitLabProvider {
     fn mark_ready(&self, review: &ReviewRequest) -> Result<String> {
         command_output("glab", &["mr", "update", review.id_value(), "--ready"])
     }
+
+    fn open_review(&self, review: &ReviewRequest) -> Result<String> {
+        command_output("glab", &["mr", "view", review.id_value(), "--web"])
+    }
 }
 
 fn list_review(branch: &str, state_flag: Option<&str>) -> Result<Option<ReviewRequest>> {

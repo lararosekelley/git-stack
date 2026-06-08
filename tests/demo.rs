@@ -86,6 +86,39 @@ fn demo_provider_is_never_auto_detected() {
 }
 
 #[test]
+fn view_reports_no_review_without_one() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+
+    repo.stack()
+        .args(["view", "feature/a"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "no demo review found for feature/a; submit it first with `git stk submit`",
+        ));
+}
+
+#[test]
+fn view_opens_the_current_branch_review() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["submit"]).assert().success();
+
+    // The demo has no browser, but the command resolves the review, prints
+    // the opening line, and the provider's graceful note.
+    repo.stack()
+        .args(["view"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("opening #1"))
+        .stdout(predicates::str::contains("demo reviews have no web page"));
+}
+
+#[test]
 fn guide_requires_a_terminal() {
     let repo = TestRepo::new();
 
