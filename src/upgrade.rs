@@ -128,7 +128,10 @@ fn refresh_assets_with_new_binary() {
         .unwrap_or(false);
 
     if !refreshed {
-        eprintln!("warning: failed to refresh generated assets; run `git stk setup` manually");
+        anstream::eprintln!(
+            "{} failed to refresh generated assets; run `git stk setup` manually",
+            crate::style::paint(crate::style::WARN, "warning:")
+        );
     }
 }
 

@@ -1,10 +1,11 @@
-use anyhow::Result;
+use std::process::ExitCode;
+
 use clap::{CommandFactory, Parser};
 use git_stk::cli::{Cli, Command};
 use git_stk::commands::Run;
-use git_stk::completions;
+use git_stk::{completions, style};
 
-fn main() -> Result<()> {
+fn main() -> ExitCode {
     // Dynamic shell completion: when invoked by a shell's completer with
     // COMPLETE=<shell>, print candidates and exit instead of running a command.
     clap_complete::env::CompleteEnv::with_factory(Cli::command)
@@ -59,8 +60,18 @@ fn main() -> Result<()> {
         Command::Cleanup(command) => command.run(),
     };
 
-    if result.is_ok() && hint_update {
-        git_stk::upgrade::maybe_hint_update();
+    match result {
+        Ok(()) => {
+            if hint_update {
+                git_stk::upgrade::maybe_hint_update();
+            }
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            // The full anyhow context chain, on one line, behind a red
+            // prefix. anstream strips the color for pipes/NO_COLOR.
+            anstream::eprintln!("{} {error:#}", style::error_prefix());
+            ExitCode::FAILURE
+        }
     }
-    result
 }
