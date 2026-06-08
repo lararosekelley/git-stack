@@ -105,8 +105,9 @@ impl TestRepo {
         command
     }
 
-    /// Unix-only: the fakes are sh scripts (the portable fake is future
-    /// work).
+    /// Unix-only sh-script fake. Suites still on this run only on Unix;
+    /// prefer [`FakeProvider`] (portable, runs on Windows too) for new work
+    /// and migrations.
     #[cfg(unix)]
     pub fn fake_cli(&self, name: &str, script: &str) -> String {
         let bin_dir = self.path().join("fake-bin");
@@ -126,6 +127,101 @@ impl TestRepo {
             bin_dir.display(),
             env::var("PATH").unwrap_or_default()
         )
+    }
+}
+
+/// A cross-platform provider fake: ordered rules matched against the joined
+/// `gh`/`glab` arguments (first match wins, like an `sh` `case "$*"`),
+/// realized by the `git-stk-fake-provider` helper binary. Replaces the
+/// Unix-only `fake_cli` shell scripts so suites can run on Windows too.
+#[derive(Default)]
+pub struct FakeProvider {
+    rules: Vec<serde_json::Value>,
+}
+
+impl FakeProvider {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Respond with `stdout` when the joined args contain `needle`.
+    pub fn on(mut self, needle: &str, stdout: &str) -> Self {
+        self.rules
+            .push(serde_json::json!({ "contains": needle, "stdout": stdout }));
+        self
+    }
+
+    /// Respond with `stdout` and append the invocation to `record_file`
+    /// (for asserting the exact arguments later).
+    pub fn record(mut self, needle: &str, record_file: &str, stdout: &str) -> Self {
+        self.rules.push(serde_json::json!({
+            "contains": needle, "stdout": stdout, "record": record_file,
+        }));
+        self
+    }
+
+    /// Fail (exit 1) with `stderr` when the joined args contain `needle`.
+    pub fn fail(mut self, needle: &str, stderr: &str) -> Self {
+        self.rules
+            .push(serde_json::json!({ "contains": needle, "stderr": stderr, "exit": 1 }));
+        self
+    }
+
+    /// The catch-all response (empty needle matches anything).
+    pub fn fallback(mut self, stdout: &str) -> Self {
+        self.rules
+            .push(serde_json::json!({ "contains": "", "stdout": stdout }));
+        self
+    }
+
+    /// Write the spec and drop `gh`/`glab` copies of the fake binary on a
+    /// PATH dir. Returns the env values the command needs.
+    pub fn install(self, repo: &TestRepo) -> FakeProviderEnv {
+        // Present only when built under `test-fakes` (always so via `just
+        // test`); a `match` rather than `expect` keeps clippy happy while
+        // still failing loudly if a bare `cargo test` reaches here.
+        let bin = match option_env!("CARGO_BIN_EXE_git-stk-fake-provider") {
+            Some(path) => path,
+            None => panic!("build tests with the `test-fakes` feature (use `just test`)"),
+        };
+
+        let bin_dir = repo.path().join("fake-bin");
+        fs::create_dir_all(&bin_dir).expect("create fake bin dir");
+        for name in ["gh", "glab"] {
+            let dest = bin_dir.join(format!("{name}{}", env::consts::EXE_SUFFIX));
+            fs::copy(bin, &dest).expect("copy fake provider");
+        }
+
+        let spec_path = repo.path().join("fake-spec.json");
+        let spec = serde_json::json!({ "rules": self.rules });
+        fs::write(&spec_path, spec.to_string()).expect("write fake spec");
+
+        let existing = env::var_os("PATH").unwrap_or_default();
+        let mut dirs = vec![bin_dir];
+        dirs.extend(env::split_paths(&existing));
+        let path = env::join_paths(dirs).expect("join PATH");
+
+        FakeProviderEnv {
+            path: path.to_string_lossy().into_owned(),
+            spec: spec_path.to_string_lossy().into_owned(),
+        }
+    }
+}
+
+/// The `PATH` and `STK_FAKE_SPEC` a faked command needs.
+pub struct FakeProviderEnv {
+    pub path: String,
+    pub spec: String,
+}
+
+impl TestRepo {
+    /// A `git stk` command wired to the given provider fake.
+    pub fn stack_faked(&self, fake: &FakeProviderEnv) -> assert_cmd::Command {
+        let mut command = self.stack();
+        command
+            .env("PATH", &fake.path)
+            .env("STK_FAKE_SPEC", &fake.spec);
+        command
     }
 }
 

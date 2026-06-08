@@ -50,7 +50,7 @@ generate-man:
 
 # Run all tests
 test:
-    cargo test
+    cargo test --features test-fakes
 
 # Code formatting
 # ---------------
@@ -70,7 +70,7 @@ lint: lint-rust lint-md
 
 lint-rust:
     cargo fmt --check
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --all-targets --features test-fakes -- -D warnings
 
 lint-md:
     npx markdownlint-cli2 "**/*.md"

@@ -1,10 +1,17 @@
-// These suites drive sh-script provider fakes, so they are Unix-only.
-#![cfg(unix)]
-
 mod common;
 
-use common::TestRepo;
+use common::{FakeProvider, TestRepo};
 use predicates::prelude::PredicateBooleanExt;
+
+// Shared provider responses. The URL host/owner and presence of a title vary
+// per test, matching what each assertion inspects.
+const MERGED_A: &str = r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]"##;
+const OPEN_B: &str = r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]"##;
+const CLOSED_A: &str = r##"[{"number":12,"state":"CLOSED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]"##;
+const MERGED_A_OWNER: &str = r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"##;
+const OPEN_B_OWNER: &str = r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]"##;
+const MERGED_A_TITLE: &str = r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]"##;
+const OPEN_B_TITLE: &str = r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]"##;
 
 #[test]
 fn cleanup_retargets_children_and_detaches_merged_branch() {
@@ -12,36 +19,16 @@ fn cleanup_retargets_children_and_detaches_merged_branch() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a\ --state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-    ;;
-  *feature/a*)
-    printf '[]\n'
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
-JSON
-    ;;
-  pr\ edit*)
-    printf 'updated child review\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("feature/a --state merged", MERGED_A)
+        .on("feature/a", "[]")
+        .on("feature/b", OPEN_B)
+        .on("pr edit", "updated child review")
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("will retarget feature/b -> main"))
@@ -75,37 +62,17 @@ fn cleanup_dry_run_leaves_stack_metadata_unchanged() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a\ --state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-    ;;
-  *feature/a*)
-    printf '[]\n'
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
-JSON
-    ;;
-  pr\ edit*)
-    echo "dry-run should not edit review" >&2
-    exit 1
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("feature/a --state merged", MERGED_A)
+        .on("feature/a", "[]")
+        .on("feature/b", OPEN_B)
+        // A dry run must never reach a review edit.
+        .fail("pr edit", "dry-run should not edit review")
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "--dry-run", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -134,48 +101,20 @@ fn cleanup_refreshes_the_stack_overview_ledger() {
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
     repo.git(["switch", "main"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 12*)
-    printf '{"body":""}\n'
-    ;;
-  pr\ view\ 13*)
-    printf '{"body":""}\n'
-    ;;
-  pr\ edit\ 12\ --body*)
-    printf '%s\n' "$*" > edit-body-12.txt
-    ;;
-  pr\ edit\ 13\ --body*)
-    printf '%s\n' "$*" > edit-body-13.txt
-    ;;
-  *feature/a\ --state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
-JSON
-    ;;
-  *feature/a*)
-    printf '[]\n'
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]
-JSON
-    ;;
-  pr\ edit*)
-    printf 'edited\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr view 12", r#"{"body":""}"#)
+        .on("pr view 13", r#"{"body":""}"#)
+        .record("pr edit 12 --body", "edit-body-12.txt", "")
+        .record("pr edit 13 --body", "edit-body-13.txt", "")
+        .on("feature/a --state merged", MERGED_A_TITLE)
+        .on("feature/a", "[]")
+        .on("feature/b", OPEN_B_TITLE)
+        .on("pr edit", "edited")
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("updated stack note in #12"))
@@ -210,37 +149,17 @@ fn cleanup_recovers_base_when_merged_parent_branch_is_gone() {
     repo.git(["branch", "-D", "feature/a"]);
     repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
 
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a\ --state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
-JSON
-    ;;
-  *feature/a*)
-    printf '[]\n'
-    ;;
-  pr\ edit\ 13\ --base*)
-    printf '%s\n' "$*" > edit-base-13.txt
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("feature/a --state merged", MERGED_A_OWNER)
+        .on("feature/a", "[]")
+        .record("pr edit 13 --base", "edit-base-13.txt", "")
+        .on("feature/b", OPEN_B_OWNER)
+        .fallback("[]")
+        .install(&repo);
 
     // Dry run announces the retarget without writing anything.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "--dry-run", "feature/b"])
-        .env("PATH", path.clone())
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -251,9 +170,8 @@ esac
         "feature/a"
     );
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -284,16 +202,10 @@ fn cleanup_leaves_a_gone_parent_alone_without_a_merged_review() {
     repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
 
     // No review for the missing parent: recovery must defer to repair.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-printf '[]\n'
-"##,
-    );
+    let fake = FakeProvider::new().fallback("[]").install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("retarget").not());
@@ -310,25 +222,13 @@ fn cleanup_skips_closed_reviews_with_their_state() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.git(["switch", "main"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *--state\ closed*)
-    cat <<'JSON'
-[{"number":12,"state":"CLOSED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("--state closed", CLOSED_A)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -359,36 +259,16 @@ fn cleanup_deletes_cleaned_merged_branch_by_default() {
     repo.git(["switch", "main"]);
     repo.git(["merge", "--squash", "feature/a"]);
     repo.git(["commit", "-m", "parent changes (#12)"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a\ --state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-    ;;
-  *feature/a*)
-    printf '[]\n'
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
-JSON
-    ;;
-  pr\ edit*)
-    printf 'updated child review\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("feature/a --state merged", MERGED_A)
+        .on("feature/a", "[]")
+        .on("feature/b", OPEN_B)
+        .on("pr edit", "updated child review")
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("will delete branch feature/a"))
@@ -413,25 +293,13 @@ fn cleanup_dry_run_keeps_branch() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.git(["switch", "main"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *--state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("--state merged", MERGED_A)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "--dry-run", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("would delete branch feature/a"));
@@ -451,25 +319,13 @@ fn cleanup_keeps_the_checked_out_branch() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *--state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("--state merged", MERGED_A)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -491,25 +347,13 @@ fn cleanup_keep_branch_keeps_cleaned_merged_branch() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.git(["switch", "main"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *--state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("--state merged", MERGED_A)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "--keep-branch", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("will detach feature/a"))
