@@ -72,8 +72,15 @@ command -v git-stk >/dev/null && source <(git stk completions bash)
 git stk completions zsh > "${fpath[1]}/_git-stk"
 ```
 
-Elvish, fish, and PowerShell are also supported. The bash and zsh output includes a wrapper so git's own
-completion can complete `git stk <TAB>` in addition to `git-stk <TAB>`.
+```powershell
+# PowerShell: add to $PROFILE (git stk setup does this for you on Windows)
+if (Get-Command git-stk -ErrorAction SilentlyContinue) { git stk completions powershell | Out-String | Invoke-Expression }
+```
+
+`git stk setup` detects bash, zsh, and fish from `$SHELL` (covering Git Bash and WSL), and falls back to
+PowerShell on native Windows by wiring `$PROFILE`. Elvish is also supported via `git stk completions
+elvish`. The bash and zsh output includes a wrapper so git's own completion can complete `git stk <TAB>`
+in addition to `git-stk <TAB>`.
 
 ## Install For Development
 

@@ -30,6 +30,38 @@ fn setup_installs_man_page_and_wires_bashrc() {
 }
 
 #[test]
+fn setup_wires_powershell_when_no_posix_shell() {
+    let repo = TestRepo::new();
+    let profile = repo.path().join("Documents/PowerShell/profile.ps1");
+    // A fake PowerShell that reports its $PROFILE path (the real query the
+    // setup runs). Its parent dir does not exist yet - setup must create it.
+    let path = repo.fake_cli(
+        "pwsh",
+        &format!(
+            r##"#!/usr/bin/env sh
+printf '%s\n' "{}"
+"##,
+            profile.display()
+        ),
+    );
+
+    repo.stack()
+        .args(["setup", "--yes"])
+        .env("PATH", path)
+        .env_remove("SHELL") // no POSIX shell -> fall through to PowerShell
+        .env_remove("XDG_DATA_HOME")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "added PowerShell completion setup",
+        ));
+
+    let rc = fs::read_to_string(&profile).expect("powershell profile written");
+    assert!(rc.contains("git stk completions powershell | Out-String | Invoke-Expression"));
+    assert!(rc.contains("Get-Command git-stk -ErrorAction SilentlyContinue"));
+}
+
+#[test]
 fn setup_is_idempotent_for_completions() {
     let repo = TestRepo::new();
     let home = repo.path().join("home");
@@ -80,6 +112,9 @@ fn setup_unknown_shell_prints_manual_hint() {
         .args(["setup", "--yes"])
         .env("HOME", &home)
         .env("SHELL", "/bin/tcsh")
+        // An empty PATH so the PowerShell fallback finds nothing (CI runners
+        // ship pwsh); the unknown shell then falls through to the hint.
+        .env("PATH", &home)
         .assert()
         .success()
         .stdout(predicates::str::contains(
