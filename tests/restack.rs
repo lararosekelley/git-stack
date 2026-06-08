@@ -1,7 +1,7 @@
 use std::fs;
 mod common;
 
-use common::TestRepo;
+use common::{FakeProvider, TestRepo};
 use predicates::prelude::PredicateBooleanExt;
 
 #[test]
@@ -313,7 +313,6 @@ fn continue_resumes_restack_after_conflict_resolution() {
 }
 
 #[test]
-#[cfg(unix)] // drives an sh-script provider fake
 fn restack_after_squash_merge_replays_only_child_commits() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
@@ -335,36 +334,22 @@ fn restack_after_squash_merge_replays_only_child_commits() {
 
     // cleanup: feature/a merged -> retarget feature/b to main, record fork point.
     let old_parent_tip = repo.git(["rev-parse", "feature/a"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a\ --state\ merged*)
-    cat <<'JSON'
-[{"number":1,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/1"}]
-JSON
-    ;;
-  *feature/a*)
-    printf '[]\n'
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":2,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/2"}]
-JSON
-    ;;
-  pr\ edit*)
-    printf 'updated child review\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/a --state merged",
+            r##"[{"number":1,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/lararosekelley/git-stk/pull/1"}]"##,
+        )
+        .on("feature/a", "[]")
+        .on(
+            "feature/b",
+            r##"[{"number":2,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/2"}]"##,
+        )
+        .on("pr edit", "updated child review")
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["cleanup", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success();
 

@@ -1,9 +1,6 @@
-// These suites drive sh-script provider fakes, so they are Unix-only.
-#![cfg(unix)]
-
 mod common;
 
-use common::TestRepo;
+use common::{FakeProvider, TestRepo};
 
 #[test]
 fn repair_reconstructs_wiped_stack_from_ancestry() {
@@ -69,25 +66,16 @@ fn repair_prefers_provider_review_base_over_ancestry() {
     repo.git(["config", "--unset", "branch.feature/b.stkParent"]);
     repo.git(["config", "--unset", "branch.feature/b.stkBase"]);
 
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/b*)
-    cat <<'JSON'
-[{"number":7,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/7"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/b",
+            r##"[{"number":7,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/7"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .arg("repair")
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(

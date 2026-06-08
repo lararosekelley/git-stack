@@ -1,6 +1,6 @@
 mod common;
 
-use common::TestRepo;
+use common::{FakeProvider, TestRepo};
 
 #[test]
 fn rename_current_branch_retargets_children() {
@@ -80,30 +80,20 @@ fn rename_retargets_every_direct_child() {
 }
 
 #[test]
-#[cfg(unix)] // drives an sh-script provider fake
 fn rename_warns_when_a_review_heads_the_old_name() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/a",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["rename", "feature/a2"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(

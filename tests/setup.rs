@@ -4,7 +4,7 @@
 use std::fs;
 mod common;
 
-use common::TestRepo;
+use common::{FakeProvider, TestRepo};
 use predicates::prelude::PredicateBooleanExt;
 
 #[test]
@@ -34,20 +34,16 @@ fn setup_wires_powershell_when_no_posix_shell() {
     let repo = TestRepo::new();
     let profile = repo.path().join("Documents/PowerShell/profile.ps1");
     // A fake PowerShell that reports its $PROFILE path (the real query the
-    // setup runs). Its parent dir does not exist yet - setup must create it.
-    let path = repo.fake_cli(
-        "pwsh",
-        &format!(
-            r##"#!/usr/bin/env sh
-printf '%s\n' "{}"
-"##,
-            profile.display()
-        ),
-    );
+    // setup runs), whatever it is invoked with. Its parent dir does not exist
+    // yet - setup must create it.
+    let profile_path = profile.display().to_string();
+    let fake = FakeProvider::new()
+        .commands(&["pwsh"])
+        .fallback(&profile_path)
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["setup", "--yes"])
-        .env("PATH", path)
         .env_remove("SHELL") // no POSIX shell -> fall through to PowerShell
         .env_remove("XDG_DATA_HOME")
         .assert()

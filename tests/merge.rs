@@ -1,9 +1,6 @@
-// These suites drive sh-script provider fakes, so they are Unix-only.
-#![cfg(unix)]
-
 use std::fs;
 
-use common::TestRepo;
+use common::{FakeProvider, TestRepo};
 
 mod common;
 
@@ -20,50 +17,20 @@ fn merge_merges_bottom_review_then_syncs() {
     let bare = repo.add_bare_origin(&["main", "feature/a", "feature/b"]);
 
     // Stateful fake: after `pr merge 12` runs, feature/a reports as merged.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ merge\ 12*)
-    printf '%s\n' "$*" > merge-args.txt
-    ;;
-  *feature/a\ --state\ merged*)
-    if [ -f merge-args.txt ]; then
-      cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
-JSON
-    else
-      printf '[]\n'
-    fi
-    ;;
-  *feature/a*)
-    if [ -f merge-args.txt ]; then
-      printf '[]\n'
-    else
-      cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
-JSON
-    fi
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]
-JSON
-    ;;
-  pr\ edit*)
-    printf 'updated review\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .record("pr merge 12", "merge-args.txt", "")
+        .on_after("feature/a --state merged", "merge-args.txt", r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]"##)
+        .on("feature/a --state merged", "[]")
+        .on_after("feature/a", "merge-args.txt", "[]")
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]"##)
+        .on("feature/b", r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]"##)
+        .on("pr edit", "updated review")
+        .fallback("[]")
+        .install(&repo);
 
     // Run from the leaf with -y: position-independent and unprompted.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "-y"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("merged A work (#12)"))
@@ -99,32 +66,15 @@ fn merge_respects_strategy_config() {
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "a\n", "a work");
 
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ merge\ 12*)
-    printf '%s\n' "$*" > merge-args.txt
-    ;;
-  *feature/a*)
-    if [ -f merge-args.txt ]; then
-      printf '[]\n'
-    else
-      cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
-JSON
-    fi
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .record("pr merge 12", "merge-args.txt", "")
+        .on_after("feature/a", "merge-args.txt", "[]")
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]"##)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "-y"])
-        .env("PATH", path)
         .assert()
         .success();
 
@@ -140,28 +90,14 @@ fn merge_dry_run_and_decline_merge_nothing() {
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "a\n", "a work");
 
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ merge*)
-    touch merged.txt
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .record("pr merge", "merged.txt", "")
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]"##)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "--dry-run"])
-        .env("PATH", path.clone())
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -169,9 +105,8 @@ esac
         ));
     assert!(!repo.path().join("merged.txt").exists());
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "--dry-run", "--auto"])
-        .env("PATH", path.clone())
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -179,9 +114,8 @@ esac
         ));
     assert!(!repo.path().join("merged.txt").exists());
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge"])
-        .env("PATH", path)
         .write_stdin("n\n")
         .assert()
         .success()
@@ -202,61 +136,25 @@ fn merge_all_lands_the_whole_stack() {
 
     // Stateful fake: each `pr merge` flips its PR to merged, and the
     // retarget from the first sync moves #13's base to main.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-base13() { cat base-13 2>/dev/null || echo feature/a; }
-case "$*" in
-  pr\ merge\ 12*)
-    printf '%s\n' "$*" > merge-args-12.txt
-    ;;
-  pr\ merge\ 13*)
-    printf '%s\n' "$*" > merge-args-13.txt
-    ;;
-  pr\ edit\ 13\ --base\ *)
-    printf '%s' "$5" > base-13
-    ;;
-  *feature/a\ --state\ merged*)
-    if [ -f merge-args-12.txt ]; then
-      printf '[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
-    else
-      printf '[]\n'
-    fi
-    ;;
-  *feature/a*)
-    if [ -f merge-args-12.txt ]; then
-      printf '[]\n'
-    else
-      printf '[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
-    fi
-    ;;
-  *feature/b\ --state\ merged*)
-    if [ -f merge-args-13.txt ]; then
-      printf '[{"number":13,"state":"MERGED","baseRefName":"%s","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]\n' "$(base13)"
-    else
-      printf '[]\n'
-    fi
-    ;;
-  *feature/b*)
-    if [ -f merge-args-13.txt ]; then
-      printf '[]\n'
-    else
-      printf '[{"number":13,"state":"OPEN","baseRefName":"%s","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]\n' "$(base13)"
-    fi
-    ;;
-  pr\ edit*)
-    printf 'edited\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .record("pr merge 12", "merge-args-12.txt", "")
+        .record("pr merge 13", "merge-args-13.txt", "")
+        .record("pr edit 13 --base", "base-13.txt", "")
+        .on_after("feature/a --state merged", "merge-args-12.txt", r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]"##)
+        .on("feature/a --state merged", "[]")
+        .on_after("feature/a", "merge-args-12.txt", "[]")
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]"##)
+        .on_after("feature/b --state merged", "merge-args-13.txt", r##"[{"number":13,"state":"MERGED","baseRefName":"main","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]"##)
+        .on("feature/b --state merged", "[]")
+        .on_after("feature/b", "merge-args-13.txt", "[]")
+        .on_after("feature/b", "base-13.txt", r##"[{"number":13,"state":"OPEN","baseRefName":"main","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]"##)
+        .on("feature/b", r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]"##)
+        .on("pr edit", "edited")
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "--all", "-y"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("merged A work (#12)"))
@@ -290,33 +188,15 @@ fn merge_all_dry_run_lists_each_review() {
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
 
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ merge*)
-    touch merged.txt
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]
-JSON
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .record("pr merge", "merged.txt", "")
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]"##)
+        .on("feature/b", r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]"##)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "--all", "--dry-run"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -342,36 +222,16 @@ fn merge_all_stops_when_a_merge_only_schedules() {
 
     // The first merge only schedules (the PR stays open), so the loop must
     // stop without touching the rest of the stack.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ merge\ 12*)
-    printf '%s\n' "$*" > merge-args-12.txt
-    ;;
-  pr\ merge*)
-    touch unexpected-merge.txt
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]
-JSON
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .record("pr merge 12", "merge-args-12.txt", "")
+        .record("pr merge", "unexpected-merge.txt", "")
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]"##)
+        .on("feature/b", r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://example.com/13","title":"B work"}]"##)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "--all", "-y"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -394,44 +254,19 @@ fn merge_all_wait_gates_each_merge_on_checks() {
     repo.commit_file("a.txt", "a\n", "a work");
 
     // Checks are green, so the wait clears and the merge follows.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ checks\ 12)
-    printf '%s\n' "$*" > checks-args.txt
-    exit 0
-    ;;
-  pr\ merge\ 12*)
-    printf '%s\n' "$*" > merge-args.txt
-    ;;
-  *feature/a\ --state\ merged*)
-    if [ -f merge-args.txt ]; then
-      printf '[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
-    else
-      printf '[]\n'
-    fi
-    ;;
-  *feature/a*)
-    if [ -f merge-args.txt ]; then
-      printf '[]\n'
-    else
-      printf '[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
-    fi
-    ;;
-  pr\ edit*)
-    printf 'edited\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .record("pr checks 12", "checks-args.txt", "")
+        .record("pr merge 12", "merge-args.txt", "")
+        .on_after("feature/a --state merged", "merge-args.txt", r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]"##)
+        .on("feature/a --state merged", "[]")
+        .on_after("feature/a", "merge-args.txt", "[]")
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]"##)
+        .on("pr edit", "edited")
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "--all", "--wait", "-y"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("waiting for checks on #12"))
@@ -455,32 +290,15 @@ fn merge_all_wait_stops_when_checks_fail() {
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "a\n", "a work");
 
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ checks\ 12)
-    echo 'X  lint  failing' >&2
-    exit 1
-    ;;
-  pr\ merge*)
-    touch merged.txt
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .fail("pr checks 12", "X  lint  failing")
+        .record("pr merge", "merged.txt", "")
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]"##)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "--all", "-y"])
-        .env("PATH", path)
         .assert()
         .failure()
         .stderr(predicates::str::contains(
@@ -500,44 +318,19 @@ fn merge_all_no_wait_overrides_the_config() {
 
     // No `pr checks` handler: a checks call would fall through and fail
     // the wait, so success proves it never ran.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ checks*)
-    echo "checks should not run" >&2
-    exit 1
-    ;;
-  pr\ merge\ 12*)
-    printf '%s\n' "$*" > merge-args.txt
-    ;;
-  *feature/a\ --state\ merged*)
-    if [ -f merge-args.txt ]; then
-      printf '[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
-    else
-      printf '[]\n'
-    fi
-    ;;
-  *feature/a*)
-    if [ -f merge-args.txt ]; then
-      printf '[]\n'
-    else
-      printf '[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]\n'
-    fi
-    ;;
-  pr\ edit*)
-    printf 'edited\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .fail("pr checks", "checks should not run")
+        .record("pr merge 12", "merge-args.txt", "")
+        .on_after("feature/a --state merged", "merge-args.txt", r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]"##)
+        .on("feature/a --state merged", "[]")
+        .on_after("feature/a", "merge-args.txt", "[]")
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://example.com/12","title":"A work"}]"##)
+        .on("pr edit", "edited")
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "--all", "--no-wait", "-y"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("merged A work (#12)"));
@@ -564,31 +357,15 @@ fn merge_auto_schedules_and_skips_the_sync() {
     repo.commit_file("a.txt", "a\n", "a work");
 
     // The PR stays open after `pr merge --auto`: scheduled, not merged.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ merge\ 12*)
-    printf '%s\n' "$*" > merge-args.txt
-    ;;
-  *feature/a\ --state\ merged*)
-    printf '[]\n'
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .record("pr merge 12", "merge-args.txt", "")
+        .on("feature/a --state merged", "[]")
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]"##)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "-y", "--auto"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -609,29 +386,17 @@ fn merge_hints_when_required_checks_block_it() {
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "a\n", "a work");
 
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ merge\ 12*)
-    echo 'GraphQL: Required status check "ci" is expected. (mergePullRequest)' >&2
-    exit 1
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .fail(
+            "pr merge 12",
+            "GraphQL: Required status check \"ci\" is expected. (mergePullRequest)",
+        )
+        .on("feature/a", r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]"##)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "-y"])
-        .env("PATH", path)
         .assert()
         .failure()
         .stderr(predicates::str::contains(
@@ -649,28 +414,14 @@ fn merge_reports_a_scheduled_gitlab_auto_merge() {
     repo.commit_file("a.txt", "a\n", "a work");
 
     // glab exits 0 after scheduling the merge; the MR stays open.
-    let path = repo.fake_cli(
-        "glab",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  mr\ merge\ 34*)
-    printf 'merge scheduled to run when pipeline succeeds\n'
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/a","web_url":"https://gitlab.com/owner/repo/-/merge_requests/34","title":"A work"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("mr merge 34", "merge scheduled to run when pipeline succeeds")
+        .on("feature/a", r##"[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/a","web_url":"https://gitlab.com/owner/repo/-/merge_requests/34","title":"A work"}]"##)
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "-y"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -688,16 +439,10 @@ fn merge_requires_an_open_review_at_the_bottom() {
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "a\n", "a work");
 
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-printf '[]\n'
-"##,
-    );
+    let fake = FakeProvider::new().fallback("[]").install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["merge", "-y"])
-        .env("PATH", path)
         .assert()
         .failure()
         .stderr(predicates::str::contains(

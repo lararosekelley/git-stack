@@ -1,11 +1,8 @@
-// These suites drive sh-script provider fakes, so they are Unix-only.
-#![cfg(unix)]
-
 use std::fs;
 
 mod common;
 
-use common::TestRepo;
+use common::{FakeProvider, TestRepo};
 use predicates::prelude::PredicateBooleanExt;
 
 #[test]
@@ -17,18 +14,14 @@ fn status_prints_local_stack_and_review_state() {
     repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
     repo.git(["switch", "-c", "feature/c"]);
     repo.git(["config", "branch.feature/c.stkParent", "feature/b"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]
-JSON
-"##,
-    );
+    let fake = FakeProvider::new()
+        .fallback(
+            r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/13"}]"##,
+        )
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["status", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("branch: feature/b"))
@@ -48,16 +41,10 @@ fn status_prints_none_when_review_is_missing() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-printf '[]\n'
-"##,
-    );
+    let fake = FakeProvider::new().fallback("[]").install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["status", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("branch: feature/b"))
@@ -71,18 +58,14 @@ fn status_warns_when_review_base_differs_from_parent() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "gitlab"]);
     repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
-    let path = repo.fake_cli(
-        "glab",
-        r##"#!/usr/bin/env sh
-cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
-JSON
-"##,
-    );
+    let fake = FakeProvider::new()
+        .fallback(
+            r##"[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]"##,
+        )
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["status", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -102,25 +85,16 @@ fn status_hints_restack_when_behind_parent() {
     repo.stack().args(["new", "feature/b"]).assert().success();
     repo.git(["switch", "feature/a"]);
     repo.commit_file("a.txt", "a\nmore\n", "a moves on");
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/b",
+            r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["status", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -137,32 +111,22 @@ fn status_hints_sync_when_parent_review_merged() {
     repo.stack().args(["new", "feature/b"]).assert().success();
     repo.git(["switch", "feature/a"]);
     repo.commit_file("a.txt", "a\nmore\n", "a moves on");
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a\ --state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
-JSON
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/a --state merged",
+            r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"##,
+        )
+        .on(
+            "feature/b",
+            r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
     // The sync covers the restack, so only the sync hint shows even though
     // the branch is also behind its parent.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["status", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -176,25 +140,16 @@ fn status_surfaces_a_closed_review_with_a_hint() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a\ --state\ closed*)
-    cat <<'JSON'
-[{"number":12,"state":"CLOSED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/a --state closed",
+            r##"[{"number":12,"state":"CLOSED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["status", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -212,33 +167,21 @@ fn status_hints_adopt_when_parent_review_closed() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a\ --state\ closed*)
-    cat <<'JSON'
-[{"number":12,"state":"CLOSED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
-JSON
-    ;;
-  *feature/a*)
-    printf '[]\n'
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/a --state closed",
+            r##"[{"number":12,"state":"CLOSED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"##,
+        )
+        .on("feature/a", "[]")
+        .on(
+            "feature/b",
+            r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["status", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -252,25 +195,16 @@ fn status_hints_sync_when_own_review_merged() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a\ --state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/a --state merged",
+            r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["status", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -288,18 +222,14 @@ fn review_reads_github_pr_for_current_branch() {
         "git@github.com:lararosekelley/git-stk",
     ]);
     repo.git(["switch", "-c", "feature/b"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-"##,
-    );
+    let fake = FakeProvider::new()
+        .fallback(
+            r##"[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]"##,
+        )
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .arg("review")
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(
@@ -311,18 +241,14 @@ JSON
 fn review_reads_gitlab_mr_for_explicit_branch() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "gitlab"]);
-    let path = repo.fake_cli(
-        "glab",
-        r##"#!/usr/bin/env sh
-cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
-JSON
-"##,
-    );
+    let fake = FakeProvider::new()
+        .fallback(
+            r##"[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]"##,
+        )
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["review", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout("!34 feature/b -> feature/a open https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34\n");
@@ -332,18 +258,10 @@ JSON
 fn review_reports_when_no_review_exists() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-cat <<'JSON'
-[]
-JSON
-"##,
-    );
+    let fake = FakeProvider::new().fallback("[]").install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["review", "feature/b"])
-        .env("PATH", path)
         .assert()
         .failure()
         .stderr(predicates::str::contains(
@@ -357,25 +275,16 @@ fn sync_sets_parent_from_github_pr_base() {
     repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/a"]);
     repo.git(["switch", "-c", "feature/b"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/b*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/b",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .arg("sync")
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -394,25 +303,16 @@ fn sync_dry_run_reports_parent_without_writing_config() {
     repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/a"]);
     repo.git(["switch", "-c", "feature/b"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/b*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/b",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["sync", "--dry-run"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -436,25 +336,16 @@ fn sync_sets_parent_from_gitlab_mr_target() {
     repo.git(["config", "stk.provider", "gitlab"]);
     repo.git(["switch", "-c", "feature/a"]);
     repo.git(["switch", "-c", "feature/b"]);
-    let path = repo.fake_cli(
-        "glab",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/b*)
-    cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/b",
+            r##"[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .arg("sync")
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -473,16 +364,10 @@ fn sync_skips_stack_branches_without_reviews() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-printf '[]\n'
-"##,
-    );
+    let fake = FakeProvider::new().fallback("[]").install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .arg("sync")
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -552,48 +437,26 @@ fn sync_advances_the_merge_loop_end_to_end() {
     // Stand on the MERGED branch: sync must move us off it.
     repo.git(["switch", "feature/a"]);
 
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 12*)
-    printf '{"body":""}\n'
-    ;;
-  pr\ view\ 13*)
-    printf '{"body":""}\n'
-    ;;
-  pr\ edit\ 12\ --body*)
-    printf '%s\n' "$*" > edit-body-12.txt
-    ;;
-  pr\ edit\ 13\ --body*)
-    printf '%s\n' "$*" > edit-body-13.txt
-    ;;
-  *feature/a\ --state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
-JSON
-    ;;
-  *feature/a*)
-    printf '[]\n'
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]
-JSON
-    ;;
-  pr\ edit*)
-    printf 'updated review\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr view 12", r#"{"body":""}"#)
+        .on("pr view 13", r#"{"body":""}"#)
+        .record("pr edit 12 --body", "edit-body-12.txt", "")
+        .record("pr edit 13 --body", "edit-body-13.txt", "")
+        .on(
+            "feature/a --state merged",
+            r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]"##,
+        )
+        .on("feature/a", "[]")
+        .on(
+            "feature/b",
+            r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]"##,
+        )
+        .on("pr edit", "updated review")
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .arg("sync")
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("feature/a: review #12 is merged"))
@@ -656,46 +519,26 @@ fn sync_styles_closed_reviews_in_the_stack_overview() {
 
     // feature/b's review was closed on the platform: invisible to the sync
     // classification, but the overview must show it red rather than drop it.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 12*)
-    printf '{"body":""}\n'
-    ;;
-  pr\ view\ 13*)
-    printf '{"body":""}\n'
-    ;;
-  pr\ edit\ 12\ --body*)
-    printf '%s\n' "$*" > edit-body-12.txt
-    ;;
-  pr\ edit\ 13\ --body*)
-    printf '%s\n' "$*" > edit-body-13.txt
-    ;;
-  *feature/b\ --state\ closed*)
-    cat <<'JSON'
-[{"number":13,"state":"CLOSED","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]
-JSON
-    ;;
-  *feature/b*)
-    printf '[]\n'
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr view 12", r#"{"body":""}"#)
+        .on("pr view 13", r#"{"body":""}"#)
+        .record("pr edit 12 --body", "edit-body-12.txt", "")
+        .record("pr edit 13 --body", "edit-body-13.txt", "")
+        .on(
+            "feature/b --state closed",
+            r##"[{"number":13,"state":"CLOSED","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"B work"}]"##,
+        )
+        .on("feature/b", "[]")
+        .on(
+            "feature/a",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
     repo.git(["switch", "feature/a"]);
-    repo.stack()
+    repo.stack_faked(&fake)
         .arg("sync")
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -736,25 +579,16 @@ fn sync_reports_stack_complete_when_everything_merged() {
     repo.git(["push", "origin", "main"]);
     repo.git(["switch", "feature/a"]);
 
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *--state\ merged*)
-    cat <<'JSON'
-[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "--state merged",
+            r##"[{"number":12,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"A work"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .arg("sync")
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -769,28 +603,17 @@ fn view_opens_the_review_in_the_browser() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.git(["config", "branch.feature/a.stkParent", "main"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 12\ --web)
-    printf '%s\n' "$*" > view-args.txt
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .record("pr view 12 --web", "view-args.txt", "")
+        .on(
+            "feature/a",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["view", "feature/a"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("opening #12"));

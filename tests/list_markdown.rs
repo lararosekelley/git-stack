@@ -1,9 +1,6 @@
-// These suites drive sh-script provider fakes, so they are Unix-only.
-#![cfg(unix)]
-
 mod common;
 
-use common::TestRepo;
+use common::{FakeProvider, TestRepo};
 
 #[test]
 fn list_markdown_prints_summary_and_ordered_pr_list() {
@@ -11,35 +8,23 @@ fn list_markdown_prints_summary_and_ordered_pr_list() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  *feature/a\ --state\ merged*)
-    cat <<'JSON'
-[{"number":9,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/9","title":"Bottom change"}]
-JSON
-    ;;
-  *feature/a*)
-    printf '[]\n'
-    ;;
-  *feature/b*)
-    cat <<'JSON'
-[{"number":10,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/10","title":"Top change"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "feature/a --state merged",
+            r##"[{"number":9,"state":"MERGED","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/9","title":"Bottom change"}]"##,
+        )
+        .on("feature/a", "[]")
+        .on(
+            "feature/b",
+            r##"[{"number":10,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/10","title":"Top change"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
     // Run from the BOTTOM branch: the root walk must find the whole stack.
     repo.git(["switch", "feature/a"]);
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["list", "--format", "markdown"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
