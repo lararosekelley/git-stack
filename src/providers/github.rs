@@ -61,27 +61,42 @@ impl ReviewProvider for GitHubProvider {
     }
 
     fn wait_for_checks(&self, review: &ReviewRequest) -> Result<bool> {
-        // Quick probe first: gh exits 0 when green, 8 while pending, and
-        // errors on a repo with no checks at all.
-        let probe = std::process::Command::new("gh")
-            .args(["pr", "checks", review.id_value()])
-            .output()
-            .context("failed to run gh")?;
-        match probe.status.code() {
-            Some(0) => return Ok(true),
-            Some(8) => {}
-            _ => {
-                let stderr = String::from_utf8_lossy(&probe.stderr);
-                return Ok(stderr.to_lowercase().contains("no checks"));
+        // Poll until the checks settle. `gh pr checks` exits 0 when green, 8
+        // while pending, and 1 otherwise - but "1 + no checks reported" is
+        // ambiguous: a repo with no CI, or a just-pushed branch whose checks
+        // have not registered yet (often queued, not running). Tolerate that
+        // state for a grace window before concluding there are none, so we
+        // neither merge early nor report a false failure.
+        let mut no_checks = 0u32;
+        let mut polls = 0u32;
+        loop {
+            let out = std::process::Command::new("gh")
+                .args(["pr", "checks", review.id_value()])
+                .output()
+                .context("failed to run gh")?;
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            match interpret_checks(out.status.code(), &stdout, &stderr) {
+                ChecksState::Passed => return Ok(true),
+                ChecksState::Failed => return Ok(false),
+                ChecksState::NoneYet if no_checks >= super::CHECK_GRACE_POLLS => return Ok(true),
+                ChecksState::NoneYet => no_checks += 1,
+                // A real pending state resets the grace count: checks exist.
+                ChecksState::Pending => no_checks = 0,
             }
-        }
 
-        // Pending: hand the terminal to gh's live table until they settle.
-        let watched = std::process::Command::new("gh")
-            .args(["pr", "checks", review.id_value(), "--watch"])
-            .status()
-            .context("failed to run gh")?;
-        Ok(watched.success())
+            polls += 1;
+            if polls.is_multiple_of(super::CHECK_GRACE_POLLS) {
+                anstream::eprintln!(
+                    "{}",
+                    crate::style::paint(
+                        crate::style::DIM,
+                        &format!("still waiting on checks for {}...", review.id)
+                    )
+                );
+            }
+            std::thread::sleep(super::check_poll_interval());
+        }
     }
 
     fn mark_ready(&self, review: &ReviewRequest) -> Result<String> {
@@ -90,6 +105,32 @@ impl ReviewProvider for GitHubProvider {
 
     fn open_review(&self, review: &ReviewRequest) -> Result<String> {
         command_output("gh", &["pr", "view", review.id_value(), "--web"])
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ChecksState {
+    Passed,
+    Pending,
+    /// No checks reported - either no CI, or not registered yet.
+    NoneYet,
+    Failed,
+}
+
+/// Classify a `gh pr checks` run. The "no checks reported" message can land
+/// on stdout or stderr, so both are inspected.
+fn interpret_checks(code: Option<i32>, stdout: &str, stderr: &str) -> ChecksState {
+    match code {
+        Some(0) => ChecksState::Passed,
+        Some(8) => ChecksState::Pending,
+        _ => {
+            let text = format!("{stdout}{stderr}").to_lowercase();
+            if text.contains("no checks") {
+                ChecksState::NoneYet
+            } else {
+                ChecksState::Failed
+            }
+        }
     }
 }
 
@@ -193,5 +234,32 @@ mod tests {
     #[test]
     fn parse_review_empty_array_returns_none() {
         assert_eq!(parse_github_review("[]").expect("parse review"), None);
+    }
+
+    #[test]
+    fn interpret_checks_maps_exit_codes() {
+        assert_eq!(interpret_checks(Some(0), "", ""), ChecksState::Passed);
+        assert_eq!(interpret_checks(Some(8), "", ""), ChecksState::Pending);
+    }
+
+    #[test]
+    fn interpret_checks_treats_no_checks_as_not_yet_on_either_stream() {
+        // The message has landed on stdout in the wild, not just stderr.
+        assert_eq!(
+            interpret_checks(Some(1), "no checks reported on the 'feat/x' branch", ""),
+            ChecksState::NoneYet
+        );
+        assert_eq!(
+            interpret_checks(Some(1), "", "no checks reported on the 'feat/x' branch"),
+            ChecksState::NoneYet
+        );
+    }
+
+    #[test]
+    fn interpret_checks_treats_a_reported_failure_as_failed() {
+        assert_eq!(
+            interpret_checks(Some(1), "X  lint  1m  failing", ""),
+            ChecksState::Failed
+        );
     }
 }

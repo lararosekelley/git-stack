@@ -80,6 +80,10 @@ impl ReviewProvider for GitLabProvider {
     }
 
     fn wait_for_checks(&self, review: &ReviewRequest) -> Result<bool> {
+        // A just-pushed MR has no pipeline attached for a moment; tolerate
+        // that for a grace window before concluding there is none, so we do
+        // not merge before the pipeline even starts.
+        let mut no_pipeline = 0u32;
         loop {
             let output = command_output(
                 "glab",
@@ -94,12 +98,14 @@ impl ReviewProvider for GitLabProvider {
                 .and_then(serde_json::Value::as_str);
 
             match status {
-                // No pipeline configured: nothing to wait for.
-                None => return Ok(true),
+                None if no_pipeline >= super::CHECK_GRACE_POLLS => return Ok(true),
+                None => no_pipeline += 1,
                 Some("success") | Some("skipped") | Some("manual") => return Ok(true),
                 Some("failed") | Some("canceled") => return Ok(false),
-                _ => std::thread::sleep(std::time::Duration::from_secs(10)),
+                // Pipeline exists and is running: it registered, so reset.
+                _ => no_pipeline = 0,
             }
+            std::thread::sleep(super::check_poll_interval());
         }
     }
 

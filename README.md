@@ -187,11 +187,12 @@ flow. Landing a stack becomes one `git stk merge` per PR - or just `git stk merg
 merge-and-sync bottom-up until the stack is complete, with a single confirmation up front. With required
 checks still running, `--auto` schedules the merge instead (GitHub `--auto`, GitLab auto-merge); a merge
 that only got scheduled - on GitLab that is the default - skips the sync (and stops `--all`) with a note
-to rerun `git stk sync` once checks pass. `merge --all --wait` (or `git config stk.mergeWait true`) waits
-for each review's checks to settle before merging it - on GitHub through `gh pr checks --watch`'s live
-table - turning the landing into genuinely one command; a failing check stops the loop, and `--no-wait`
-overrides the config. There is no artificial timeout: the wait runs as long as the platform reports
-checks in progress, and ctrl-c is always safe (rerun to resume from the new bottom).
+to rerun `git stk sync` once checks pass. `merge --all --wait` (or `git config stk.mergeWait true`) polls
+each review's checks until they settle before merging it - turning the landing into genuinely one command;
+a failing check stops the loop, and `--no-wait` overrides the config. A freshly pushed branch whose checks
+are still queued (not yet registered) is waited out, not mistaken for "no checks." There is no artificial
+timeout: the wait runs as long as the platform reports checks in progress, and ctrl-c is always safe
+(rerun to resume from the new bottom).
 
 `submit --stack` and `restack` operate on the whole stack containing the current branch - walk to the
 root, then every branch above it - so it never matters where in the stack you are standing. With
