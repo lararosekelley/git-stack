@@ -28,8 +28,16 @@ there; just be polite 😉
 curl https://larakelley.com/sh/git-stk | bash
 ```
 
-Installers are also attached to [GitHub Releases](https://github.com/lararosekelley/git-stk/releases), or install
-from [crates.io](https://crates.io/crates/git-stk) with `cargo install git-stk --locked`.
+Or with [Homebrew](https://brew.sh):
+
+```sh
+brew install lararosekelley/tap/git-stk
+```
+
+Installers are also attached to [GitHub Releases](https://github.com/lararosekelley/git-stk/releases). With a
+Rust toolchain, `cargo install git-stk --locked` builds from source, or `cargo binstall git-stk` fetches
+the prebuilt binary without compiling. The Linux builds are static (musl), so they run anywhere - glibc,
+Alpine, or an older distro.
 
 Then install the man page and wire up shell completions (idempotent; prompts before touching your shell rc):
 
