@@ -12,12 +12,14 @@ use crate::style;
 
 mod nav;
 mod restack;
+mod snapshot;
 
 pub use nav::{
     behind_parent_hint, checkout_bottom, checkout_child, checkout_parent, checkout_top,
     print_children, print_parent, print_stack,
 };
 pub use restack::{abort_restack, continue_restack, restack};
+pub use snapshot::{take as snapshot, undo};
 
 const PARENT_KEY: &str = "stkParent";
 const BASE_KEY: &str = "stkBase";
@@ -89,6 +91,7 @@ pub fn rename_branch(old: &str, new: &str, dry_run: bool) -> Result<()> {
     let children = children_for_branch(old)?;
 
     if !dry_run {
+        snapshot::take("rename");
         git::rename_branch(old, new)?;
     }
     anstream::println!(

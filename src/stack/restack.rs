@@ -33,6 +33,7 @@ pub fn restack(update_refs_mode: UpdateRefsMode, push_mode: PushMode, dry_run: b
         return print_restack_plan(&branches, &parents, update_refs, push);
     }
 
+    super::snapshot("restack");
     clear_state()?;
     let all = branches.clone();
     restack_branches(branches, &parents, update_refs, push, &all)
@@ -357,4 +358,9 @@ fn clear_state() -> Result<()> {
 
 fn state_path() -> Result<PathBuf> {
     Ok(PathBuf::from(git::git_path(STATE_FILE)?))
+}
+
+/// Whether a restack is paused on a conflict, awaiting continue/abort.
+pub(super) fn in_progress() -> bool {
+    state_path().map(|path| path.exists()).unwrap_or(false)
 }

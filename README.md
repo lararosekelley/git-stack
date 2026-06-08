@@ -148,7 +148,13 @@ git stk bottom        # jump to the branch just above the trunk
 git stk restack [--update-refs | --no-update-refs] [--push | --no-push] [--dry-run]
 git stk continue
 git stk abort
+git stk undo
 ```
+
+`undo` reverses the last stack-rewriting command - `restack`, `sync`, `merge`, `cleanup`, or `rename` -
+restoring local branch tips and stack metadata (it even recreates a branch `cleanup` deleted). It is local
+only: pushes and platform merges are not reverted. One level deep, it refuses on a dirty worktree (it
+resets the current branch) or mid-conflict (finish with `continue`/`abort` first).
 
 Provider-backed workflows:
 

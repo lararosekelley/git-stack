@@ -126,6 +126,29 @@ pub fn rev_parse(rev: &str) -> Result<String> {
     output(&["rev-parse", "--verify", &spec]).with_context(|| format!("failed to resolve {rev}"))
 }
 
+/// The commit a branch points at, or None when the branch does not exist.
+pub fn branch_sha(branch: &str) -> Option<String> {
+    rev_parse(branch).ok()
+}
+
+/// Point a branch at a commit, creating it if absent. Does not touch the
+/// worktree.
+pub fn update_ref(branch: &str, sha: &str) -> Result<()> {
+    status(&["update-ref", &format!("refs/heads/{branch}"), sha])
+        .with_context(|| format!("failed to update {branch} to {sha}"))
+}
+
+/// Reset the worktree and index to HEAD. Safe to lose nothing only on a
+/// clean tree; callers must check [`worktree_is_clean`] first.
+pub fn reset_hard() -> Result<()> {
+    status(&["reset", "--hard"]).context("failed to reset the worktree")
+}
+
+/// Whether the worktree and index have no uncommitted changes.
+pub fn worktree_is_clean() -> Result<bool> {
+    Ok(output(&["status", "--porcelain"])?.is_empty())
+}
+
 /// Default branch of `remote` (from its locally-known HEAD symref), if any.
 pub fn remote_default_branch(remote: &str) -> Option<String> {
     let reference = format!("refs/remotes/{remote}/HEAD");
