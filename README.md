@@ -145,6 +145,7 @@ git stk provider
 git stk config
 git stk status [branch]
 git stk review [branch]
+git stk view [branch]
 git stk sync [--dry-run] [--push | --no-push]
 git stk merge [-y] [--auto | --all [--wait | --no-wait]] [--dry-run]
 git stk repair [--dry-run]
@@ -152,6 +153,9 @@ git stk submit [branch] [-d <desc>] [--draft | --no-draft] [--ready] [--dry-run]
 git stk submit [--stack | --no-stack | --downstack] [-d <desc>] [--draft | --no-draft] [--ready] [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--keep-branch]
 ```
+
+`review` prints a branch's review (id, base, state, url); `view` opens it in your browser. Both work on
+merged and closed reviews, and report clearly when none exists yet.
 
 `sync` is the merge-loop one-shot: it fetches the trunk (without leaving your branch), refreshes stack
 metadata from open reviews, cleans up merged branches (retargeting children and deleting), moves you off

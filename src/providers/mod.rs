@@ -113,6 +113,9 @@ pub trait ReviewProvider {
 
     /// Mark a draft review as ready for review.
     fn mark_ready(&self, review: &ReviewRequest) -> Result<String>;
+
+    /// Open the review in the user's browser.
+    fn open_review(&self, review: &ReviewRequest) -> Result<String>;
 }
 
 pub fn detect_provider() -> Result<DetectedProvider> {

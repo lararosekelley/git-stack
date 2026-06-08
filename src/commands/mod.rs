@@ -33,3 +33,4 @@ pub mod sync;
 pub mod top;
 pub mod up;
 pub mod upgrade;
+pub mod view;

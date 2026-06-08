@@ -124,6 +124,11 @@ impl ReviewProvider for DemoProvider {
         save(&state)?;
         Ok(String::new())
     }
+
+    fn open_review(&self, _review: &ReviewRequest) -> Result<String> {
+        // The demo has no web page to open.
+        Ok("demo reviews have no web page".to_owned())
+    }
 }
 
 fn state_path() -> Result<PathBuf> {

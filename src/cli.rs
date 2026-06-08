@@ -33,6 +33,7 @@ pub enum Command {
     Abort(commands::restack::Abort),
     Provider(commands::provider::Provider),
     Review(commands::review::Review),
+    View(commands::view::View),
     Sync(commands::sync::Sync),
     Merge(commands::merge::Merge),
     Repair(commands::repair::Repair),
