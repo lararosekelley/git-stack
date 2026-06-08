@@ -38,7 +38,7 @@ esac
     // Run from the BOTTOM branch: the root walk must find the whole stack.
     repo.git(["switch", "feature/a"]);
     repo.stack()
-        .args(["list", "--markdown"])
+        .args(["list", "--format", "markdown"])
         .env("PATH", path)
         .assert()
         .success()
@@ -61,7 +61,7 @@ fn list_markdown_degrades_to_branch_names_without_provider() {
     repo.stack().args(["new", "feature/b"]).assert().success();
 
     repo.stack()
-        .args(["list", "--markdown"])
+        .args(["list", "--format", "markdown"])
         .assert()
         .success()
         .stdout(predicates::str::contains("2 branches, base `main`"))
@@ -74,7 +74,7 @@ fn list_markdown_reports_empty_stack() {
     let repo = TestRepo::new();
 
     repo.stack()
-        .args(["list", "--markdown"])
+        .args(["list", "--format", "markdown"])
         .assert()
         .success()
         .stdout(predicates::str::contains("no stacked branches"));

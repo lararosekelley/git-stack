@@ -93,7 +93,7 @@ Local stack metadata:
 git stk new <branch>
 git stk parent [branch]
 git stk children [branch]
-git stk list [--markdown]
+git stk list [--format <markdown|plain>]
 git stk adopt <branch> --parent <parent>
 git stk detach [branch]
 git stk rename [branch] <new-name> [--dry-run]
@@ -114,8 +114,8 @@ warns when an open review still heads the old branch (platforms do not follow lo
 branch is behind its parent, `submit` when a review base went stale, `sync` when a review in the stack
 merged.
 
-`list --markdown` prints a shareable summary instead - a status line and the PRs in merge order with
-links and states, ready to paste into Slack or a tracking issue:
+`list --format markdown` prints a shareable summary instead - a status line and the PRs in merge order
+with links and states, ready to paste into a tracking issue or PR comment:
 
 ```markdown
 2 PRs, base `main`, 1 open / 1 merged
@@ -124,7 +124,19 @@ links and states, ready to paste into Slack or a tracking issue:
 2. [Top change (#10)](https://github.com/owner/repo/pull/10) - open
 ```
 
-Branches without reviews degrade to plain names, so it works before submitting too.
+For anywhere that does not render pasted markdown links (Slack, say), `--format plain` emits plain text
+with bare URLs (which chat apps auto-link) instead:
+
+```text
+2 PRs, base main, 1 open / 1 merged
+
+1. Bottom change (#9) - merged
+   https://github.com/owner/repo/pull/9
+2. Top change (#10) - open
+   https://github.com/owner/repo/pull/10
+```
+
+Branches without reviews degrade to plain names, so both work before submitting too.
 
 Navigation and re-stacking:
 
