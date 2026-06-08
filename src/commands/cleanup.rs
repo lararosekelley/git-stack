@@ -41,6 +41,11 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool, keep_branch: bool) -> Result
     let mut skipped = 0;
     let mut retargeted = 0;
 
+    // Snapshot before any branch is retargeted or deleted.
+    if !dry_run {
+        stack::snapshot("cleanup");
+    }
+
     // Refresh the stack overview ledger while the merged branches and their
     // reviews are still resolvable, so their entries get restyled rather
     // than dropped - mirroring sync.

@@ -43,6 +43,7 @@ fn main() -> Result<()> {
         Command::Restack(command) => command.run(),
         Command::Continue(command) => command.run(),
         Command::Abort(command) => command.run(),
+        Command::Undo(command) => command.run(),
         Command::Provider(command) => command.run(),
         Command::Review(command) => command.run(),
         Command::View(command) => command.run(),

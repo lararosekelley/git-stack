@@ -35,6 +35,12 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
     let local_branches = git::local_branches()?;
     let trunk = stack::trunk_branch(&local_branches);
 
+    // Snapshot before the fetch/cleanup/restack rewrites anything. (When
+    // `merge` calls sync, merge has already snapshotted; this no-ops.)
+    if !dry_run {
+        stack::snapshot("sync");
+    }
+
     // 1. Fetch the trunk so merged work is visible locally.
     let remote = settings::remote()?;
     if let Some(trunk) = &trunk {

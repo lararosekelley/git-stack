@@ -106,6 +106,88 @@ fn list_plain_format_uses_plain_text_and_bare_urls() {
 }
 
 #[test]
+fn undo_restores_branch_tips_after_a_restack() {
+    let repo = TestRepo::new();
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "b work");
+    let before = repo.git(["rev-parse", "feature/b"]);
+
+    // Move the parent so the restack actually rewrites feature/b.
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a2.txt", "more\n", "a moves on");
+    repo.stack().arg("restack").assert().success();
+    repo.git(["switch", "feature/b"]);
+    assert_ne!(repo.git(["rev-parse", "feature/b"]), before);
+
+    repo.stack()
+        .arg("undo")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("undid restack"))
+        .stdout(predicates::str::contains(
+            "pushes and merged reviews are not reverted",
+        ));
+
+    assert_eq!(repo.git(["rev-parse", "feature/b"]), before);
+    // One-shot: a second undo has nothing to restore.
+    repo.stack()
+        .arg("undo")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("nothing to undo"));
+}
+
+#[test]
+fn undo_recreates_a_branch_cleanup_deleted() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.stack().args(["submit"]).assert().success();
+    let sha = repo.git(["rev-parse", "feature/a"]);
+
+    // Merge lands feature/a on main and cleanup deletes it.
+    repo.stack().args(["merge", "-y"]).assert().success();
+    assert_eq!(
+        repo.git_status(["rev-parse", "--verify", "feature/a"])
+            .status
+            .code(),
+        Some(128),
+        "feature/a should be gone after merge"
+    );
+
+    repo.stack().arg("undo").assert().success();
+    // The deleted branch is back at its pre-merge tip.
+    assert_eq!(repo.git(["rev-parse", "feature/a"]), sha);
+}
+
+#[test]
+fn undo_refuses_with_a_dirty_worktree() {
+    let repo = TestRepo::new();
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "a work");
+    repo.git(["switch", "feature/a"]);
+    repo.commit_file("a2.txt", "more\n", "a moves on");
+    repo.git(["switch", "main"]); // make feature/a the stack, restack a no-op-free case
+    repo.git(["switch", "feature/a"]);
+    repo.stack().arg("restack").assert().success();
+
+    // Dirty the tree, then undo must refuse rather than reset over it.
+    repo.write("uncommitted.txt", "work in progress\n");
+    repo.git(["add", "uncommitted.txt"]);
+    repo.stack()
+        .arg("undo")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "worktree has uncommitted changes",
+        ));
+}
+
+#[test]
 fn view_reports_no_review_without_one() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "demo"]);

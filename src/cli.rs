@@ -31,6 +31,7 @@ pub enum Command {
     Restack(commands::restack::Restack),
     Continue(commands::restack::Continue),
     Abort(commands::restack::Abort),
+    Undo(commands::undo::Undo),
     Provider(commands::provider::Provider),
     Review(commands::review::Review),
     View(commands::view::View),

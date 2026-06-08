@@ -87,6 +87,7 @@ fn merge(dry_run: bool, yes: bool, auto: bool) -> Result<()> {
         return Ok(());
     }
 
+    stack::snapshot("merge");
     match merge_and_check(review_provider.as_ref(), &review, &strategy, auto)? {
         // Reconcile everything the merge changed: fetch, clean up, restack,
         // push.
@@ -144,6 +145,8 @@ fn merge_all(dry_run: bool, yes: bool, wait: bool) -> Result<()> {
         println!("merge cancelled");
         return Ok(());
     }
+
+    stack::snapshot("merge --all");
 
     // Each sync removes the merged bottom, so the loop is bounded by the
     // number of branches it started with.
