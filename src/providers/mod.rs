@@ -1,9 +1,21 @@
+use std::time::Duration;
 use std::{fmt, process::Command};
 
 use anyhow::{Context, Result, anyhow, bail};
 
 use crate::git;
 use crate::settings;
+
+/// How long to keep polling a "no checks / no pipeline yet" result before
+/// concluding there genuinely are none. A just-pushed branch's checks take a
+/// moment to register, so concluding too early would either merge without
+/// waiting or report a false failure.
+pub(super) const CHECK_GRACE_POLLS: u32 = 6;
+
+/// Delay between `wait_for_checks` polls.
+pub(super) fn check_poll_interval() -> Duration {
+    Duration::from_secs(5)
+}
 
 mod demo;
 mod github;

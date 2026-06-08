@@ -393,17 +393,14 @@ fn merge_all_wait_gates_each_merge_on_checks() {
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.commit_file("a.txt", "a\n", "a work");
 
-    // Checks pending on the probe, green once watched; the merge follows.
+    // Checks are green, so the wait clears and the merge follows.
     let path = repo.fake_cli(
         "gh",
         r##"#!/usr/bin/env sh
 case "$*" in
-  pr\ checks\ 12\ --watch)
-    printf '%s\n' "$*" > watch-args.txt
-    exit 0
-    ;;
   pr\ checks\ 12)
-    exit 8
+    printf '%s\n' "$*" > checks-args.txt
+    exit 0
     ;;
   pr\ merge\ 12*)
     printf '%s\n' "$*" > merge-args.txt
@@ -443,8 +440,9 @@ esac
             "merge complete: 1 of 1 review merged",
         ));
 
-    let watched = fs::read_to_string(repo.path().join("watch-args.txt")).expect("watch args");
-    assert_eq!(watched.trim(), "pr checks 12 --watch");
+    // The gate ran `gh pr checks` (no `--watch` in the poll model).
+    let checks = fs::read_to_string(repo.path().join("checks-args.txt")).expect("checks args");
+    assert_eq!(checks.trim(), "pr checks 12");
 }
 
 #[test]
