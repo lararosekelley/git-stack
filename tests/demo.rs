@@ -86,6 +86,26 @@ fn demo_provider_is_never_auto_detected() {
 }
 
 #[test]
+fn list_plain_format_uses_plain_text_and_bare_urls() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "add feature a");
+    repo.stack().args(["submit"]).assert().success();
+
+    repo.stack()
+        .args(["list", "--format", "plain"])
+        .assert()
+        .success()
+        // Unquoted base; bare URL on its own line for chat apps to auto-link.
+        .stdout(predicates::str::contains("1 PR, base main"))
+        .stdout(predicates::str::contains("1. add feature a (#1) - open"))
+        .stdout(predicates::str::contains("   demo://review/1"))
+        // No markdown link syntax.
+        .stdout(predicates::str::contains("](").not());
+}
+
+#[test]
 fn view_reports_no_review_without_one() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "demo"]);

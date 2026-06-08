@@ -1,33 +1,42 @@
 use anyhow::Result;
-use clap::ArgAction;
+use clap::ValueEnum;
 
 use crate::commands::Run;
 use crate::providers::{ReviewRequest, ReviewState, detect_provider, review_provider};
 use crate::{git, stack};
 
+/// A shareable rendering of the stack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub enum Format {
+    /// Markdown links - perfect in tracking issues and PR comments.
+    Markdown,
+    /// Plain text with bare URLs, for anywhere that does not render markdown
+    /// links from a paste (e.g. Slack).
+    Plain,
+}
+
 /// Print the current stack.
 #[derive(Debug, clap::Args)]
 pub struct List {
-    /// Print a shareable markdown summary with PR links and states.
-    #[arg(long, action = ArgAction::SetTrue)]
-    markdown: bool,
+    /// Render a shareable summary instead of the tree.
+    #[arg(long, value_enum)]
+    format: Option<Format>,
 }
 
 impl Run for List {
     fn run(self) -> Result<()> {
-        if self.markdown {
-            list_markdown()
-        } else {
-            crate::stack::print_stack()
+        match self.format {
+            Some(format) => list_formatted(format),
+            None => crate::stack::print_stack(),
         }
     }
 }
 
-/// Print the stack in a copy-paste markdown format for sharing with
-/// reviewers: a summary line, then the PRs as an ordered bottom-to-top list
-/// (merge order) with title, link, and state. Degrades to plain branch names
-/// when reviews or the provider CLI are unavailable.
-pub fn list_markdown() -> Result<()> {
+/// Print the stack as a copy-paste summary for sharing: a summary line, then
+/// the PRs bottom-to-top (merge order) with title, link/url, and state.
+/// Degrades to plain branch names when reviews or the provider CLI are
+/// unavailable.
+pub fn list_formatted(format: Format) -> Result<()> {
     let current = git::current_branch()?;
     let root = stack::stack_root(&current)?;
     let branches: Vec<String> = stack::branch_and_descendants(&root)?
@@ -52,37 +61,55 @@ pub fn list_markdown() -> Result<()> {
         })
         .collect();
 
-    println!("{}", markdown_summary(&entries, &root));
+    println!("{}", summary(&entries, &root, format));
     println!();
     for (index, (branch, review)) in entries.iter().enumerate() {
-        let item = match review {
-            Some(review) => format!("[{}]({}) - {}", review.label(), review.url, review.state),
-            None => format!("`{branch}` (no review)"),
-        };
-        println!("{}. {item}", index + 1);
+        let number = index + 1;
+        match (format, review) {
+            (Format::Markdown, Some(review)) => {
+                println!(
+                    "{number}. [{}]({}) - {}",
+                    review.label(),
+                    review.url,
+                    review.state
+                );
+            }
+            (Format::Markdown, None) => println!("{number}. `{branch}` (no review)"),
+            // The bare URL on its own line is what chat apps auto-link.
+            (Format::Plain, Some(review)) => {
+                println!("{number}. {} - {}", review.label(), review.state);
+                println!("   {}", review.url);
+            }
+            (Format::Plain, None) => println!("{number}. {branch} (no review)"),
+        }
     }
 
     Ok(())
 }
 
-/// One-line stack summary, e.g. "3 PRs, base `main`, 2 open / 1 merged".
-fn markdown_summary(entries: &[(String, Option<ReviewRequest>)], base: &str) -> String {
+/// One-line stack summary, e.g. "3 PRs, base `main`, 2 open / 1 merged"
+/// (the base is unquoted in plain format).
+fn summary(entries: &[(String, Option<ReviewRequest>)], base: &str, format: Format) -> String {
     let total = entries.len();
     let reviews: Vec<&ReviewRequest> = entries.iter().filter_map(|(_, r)| r.as_ref()).collect();
+    let base = match format {
+        Format::Markdown => format!("`{base}`"),
+        Format::Plain => base.to_owned(),
+    };
 
     let mut summary = if reviews.is_empty() {
         format!(
-            "{total} branch{}, base `{base}`",
+            "{total} branch{}, base {base}",
             if total == 1 { "" } else { "es" }
         )
     } else if reviews.len() == total {
         format!(
-            "{total} PR{}, base `{base}`",
+            "{total} PR{}, base {base}",
             if total == 1 { "" } else { "s" }
         )
     } else {
         format!(
-            "{total} branches ({} with reviews), base `{base}`",
+            "{total} branches ({} with reviews), base {base}",
             reviews.len()
         )
     };
