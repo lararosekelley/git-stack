@@ -119,7 +119,12 @@ fn upgrade_without_receipt_suggests_cargo_install() {
         .stderr(predicates::str::contains("cargo install git-stk --locked"));
 }
 
+// Unix-only: this intercepts git-stk's `setup --refresh` self-invocation by
+// shadowing `git-stk` on PATH. Windows can't be tricked that way - its process
+// search checks the running exe's own dir (the real test binary) before PATH -
+// and the refreshed asset (the man page) is itself a no-op on Windows.
 #[test]
+#[cfg(unix)]
 fn upgrade_head_refreshes_assets_with_new_binary() {
     let repo = TestRepo::new();
     // Fake the freshly installed binary: upgrade must invoke it (not itself)
@@ -142,7 +147,11 @@ fn upgrade_head_refreshes_assets_with_new_binary() {
     assert_eq!(recorded.trim(), "setup --refresh");
 }
 
+// Unix-only for the same reason as upgrade_head_refreshes_assets_with_new_binary:
+// the failing `setup --refresh` is a faked git-stk shadowed on PATH, which
+// Windows' exe-dir-first process search bypasses.
 #[test]
+#[cfg(unix)]
 fn upgrade_head_warns_when_asset_refresh_fails() {
     let repo = TestRepo::new();
     let fake = FakeProvider::new()
