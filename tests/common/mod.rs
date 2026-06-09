@@ -213,14 +213,17 @@ impl FakeProvider {
             None => panic!("build tests with the `test-fakes` feature (use `just test`)"),
         };
 
-        let bin_dir = repo.path().join("fake-bin");
+        // Live under .git so the fake binaries and spec never surface as
+        // untracked files - some commands (e.g. `run`) refuse a dirty tree.
+        let support = repo.path().join(".git").join("stk-fake");
+        let bin_dir = support.join("bin");
         fs::create_dir_all(&bin_dir).expect("create fake bin dir");
         for name in &self.commands {
             let dest = bin_dir.join(format!("{name}{}", env::consts::EXE_SUFFIX));
             fs::copy(bin, &dest).expect("copy fake provider");
         }
 
-        let spec_path = repo.path().join("fake-spec.json");
+        let spec_path = support.join("spec.json");
         let mut spec = serde_json::json!({ "rules": self.rules });
         if let Some(log) = self.log {
             spec["log"] = serde_json::Value::String(log);

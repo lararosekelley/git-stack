@@ -29,6 +29,7 @@ pub enum Command {
     Detach(commands::detach::Detach),
     Rename(commands::rename::Rename),
     Restack(commands::restack::Restack),
+    Run(commands::run::Run),
     Continue(commands::restack::Continue),
     Abort(commands::restack::Abort),
     Undo(commands::undo::Undo),
