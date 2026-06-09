@@ -1,8 +1,6 @@
 //! Shared integration-test harness.
 #![allow(dead_code)]
 
-#[cfg(unix)]
-use std::os::unix::fs::PermissionsExt;
 use std::{env, fs, path::Path, process::Command};
 
 use tempfile::TempDir;
@@ -104,44 +102,47 @@ impl TestRepo {
         command.env_remove("NO_COLOR");
         command
     }
-
-    /// Unix-only sh-script fake. Suites still on this run only on Unix;
-    /// prefer [`FakeProvider`] (portable, runs on Windows too) for new work
-    /// and migrations.
-    #[cfg(unix)]
-    pub fn fake_cli(&self, name: &str, script: &str) -> String {
-        let bin_dir = self.path().join("fake-bin");
-        fs::create_dir_all(&bin_dir).expect("create fake bin dir");
-
-        let path = bin_dir.join(name);
-        fs::write(&path, script).expect("write fake cli");
-
-        let mut permissions = fs::metadata(&path)
-            .expect("fake cli metadata")
-            .permissions();
-        permissions.set_mode(0o755);
-        fs::set_permissions(&path, permissions).expect("chmod fake cli");
-
-        format!(
-            "{}:{}",
-            bin_dir.display(),
-            env::var("PATH").unwrap_or_default()
-        )
-    }
 }
 
-/// A cross-platform provider fake: ordered rules matched against the joined
-/// `gh`/`glab` arguments (first match wins, like an `sh` `case "$*"`),
-/// realized by the `git-stk-fake-provider` helper binary. Replaces the
-/// Unix-only `fake_cli` shell scripts so suites can run on Windows too.
-#[derive(Default)]
+/// A cross-platform fake for the external commands git-stk shells out to -
+/// `gh`/`glab` by default, or any others (`cargo`, `git-stk`, `pwsh`) named
+/// via [`commands`](FakeProvider::commands). Ordered rules are matched
+/// against the joined arguments (first match wins, like an `sh` `case
+/// "$*"`), realized by the `git-stk-fake-provider` helper binary. Replaces
+/// the Unix-only `fake_cli` shell scripts so suites can run on Windows too.
 pub struct FakeProvider {
     rules: Vec<serde_json::Value>,
+    commands: Vec<String>,
+    log: Option<String>,
+}
+
+impl Default for FakeProvider {
+    fn default() -> Self {
+        Self {
+            rules: Vec::new(),
+            commands: vec!["gh".into(), "glab".into()],
+            log: None,
+        }
+    }
 }
 
 impl FakeProvider {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Install the fake under these command names instead of `gh`/`glab`
+    /// (e.g. `cargo`, `git-stk`, `pwsh`). They all share one rule set.
+    pub fn commands(mut self, names: &[&str]) -> Self {
+        self.commands = names.iter().map(|n| n.to_string()).collect();
+        self
+    }
+
+    /// Record every invocation's arguments to `file`, in order - for
+    /// asserting the sequence of provider calls.
+    pub fn log_all(mut self, file: &str) -> Self {
+        self.log = Some(file.to_string());
+        self
     }
 
     /// Respond with `stdout` when the joined args contain `needle`.
@@ -151,11 +152,30 @@ impl FakeProvider {
         self
     }
 
-    /// Respond with `stdout` and append the invocation to `record_file`
-    /// (for asserting the exact arguments later).
+    /// Like [`on`](Self::on), but only once `marker_file` exists. Pair it
+    /// with a [`record`](Self::record) of the side effect that creates the
+    /// marker to model a provider whose answer flips after a merge/retarget.
+    pub fn on_after(mut self, needle: &str, marker_file: &str, stdout: &str) -> Self {
+        self.rules.push(serde_json::json!({
+            "contains": needle, "if_file": marker_file, "stdout": stdout,
+        }));
+        self
+    }
+
+    /// Respond with `stdout` and overwrite `record_file` with this
+    /// invocation (last write wins, like `> file`).
     pub fn record(mut self, needle: &str, record_file: &str, stdout: &str) -> Self {
         self.rules.push(serde_json::json!({
             "contains": needle, "stdout": stdout, "record": record_file,
+        }));
+        self
+    }
+
+    /// Respond with `stdout` and append this invocation to `record_file`
+    /// (every call kept, like `>> file`).
+    pub fn record_append(mut self, needle: &str, record_file: &str, stdout: &str) -> Self {
+        self.rules.push(serde_json::json!({
+            "contains": needle, "stdout": stdout, "record": record_file, "append": true,
         }));
         self
     }
@@ -174,8 +194,16 @@ impl FakeProvider {
         self
     }
 
-    /// Write the spec and drop `gh`/`glab` copies of the fake binary on a
-    /// PATH dir. Returns the env values the command needs.
+    /// A catch-all that fails (exit 1) - a guard asserting no unexpected call
+    /// slips through.
+    pub fn fallback_fail(mut self, stderr: &str) -> Self {
+        self.rules
+            .push(serde_json::json!({ "contains": "", "stderr": stderr, "exit": 1 }));
+        self
+    }
+
+    /// Write the spec and drop copies of the fake binary (one per command
+    /// name) on a PATH dir. Returns the env values the command needs.
     pub fn install(self, repo: &TestRepo) -> FakeProviderEnv {
         // Present only when built under `test-fakes` (always so via `just
         // test`); a `match` rather than `expect` keeps clippy happy while
@@ -187,13 +215,16 @@ impl FakeProvider {
 
         let bin_dir = repo.path().join("fake-bin");
         fs::create_dir_all(&bin_dir).expect("create fake bin dir");
-        for name in ["gh", "glab"] {
+        for name in &self.commands {
             let dest = bin_dir.join(format!("{name}{}", env::consts::EXE_SUFFIX));
             fs::copy(bin, &dest).expect("copy fake provider");
         }
 
         let spec_path = repo.path().join("fake-spec.json");
-        let spec = serde_json::json!({ "rules": self.rules });
+        let mut spec = serde_json::json!({ "rules": self.rules });
+        if let Some(log) = self.log {
+            spec["log"] = serde_json::Value::String(log);
+        }
         fs::write(&spec_path, spec.to_string()).expect("write fake spec");
 
         let existing = env::var_os("PATH").unwrap_or_default();

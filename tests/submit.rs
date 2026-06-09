@@ -1,10 +1,7 @@
-// These suites drive sh-script provider fakes, so they are Unix-only.
-#![cfg(unix)]
-
 use std::{fs, process::Command};
 mod common;
 
-use common::TestRepo;
+use common::{FakeProvider, TestRepo};
 use predicates::prelude::PredicateBooleanExt;
 
 #[test]
@@ -13,27 +10,17 @@ fn submit_creates_github_pr_when_none_exists() {
     repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/b"]);
     repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ list*)
-    printf '[]\n'
-    ;;
-  pr\ create*)
-    printf 'https://github.com/lararosekelley/git-stk/pull/12\n'
-    ;;
-  *)
-    echo "unexpected gh args: $*" >&2
-    exit 1
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr list", "[]")
+        .on(
+            "pr create",
+            "https://github.com/lararosekelley/git-stk/pull/12",
+        )
+        .fallback_fail("unexpected gh args")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .arg("submit")
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("created feature/b -> feature/a"))
@@ -51,24 +38,13 @@ fn submit_dry_run_reports_create_without_calling_create() {
     repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "feature/b"]);
     repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ list*)
-    printf '[]\n'
-    ;;
-  *)
-    echo "unexpected gh args: $*" >&2
-    exit 1
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr list", "[]")
+        .fallback_fail("unexpected gh args")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--dry-run"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout("would create feature/b -> feature/a\nsubmit complete: 1 created, 0 updated, 0 skipped\n");
@@ -79,26 +55,16 @@ fn submit_noops_when_github_pr_already_targets_parent() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "github"]);
     repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ list*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]
-JSON
-    ;;
-  *)
-    echo "unexpected gh args: $*" >&2
-    exit 1
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "pr list",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/lararosekelley/git-stk/pull/12"}]"##,
+        )
+        .fallback_fail("unexpected gh args")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout("feature/b already targets feature/a (#12)\nsubmit complete: 0 created, 0 updated, 1 skipped\n");
@@ -109,29 +75,17 @@ fn submit_updates_gitlab_mr_target_when_parent_changed() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "gitlab"]);
     repo.git(["config", "branch.feature/b.stkParent", "main"]);
-    let path = repo.fake_cli(
-        "glab",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  mr\ list*)
-    cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
-JSON
-    ;;
-  mr\ update*)
-    printf 'updated mr\n'
-    ;;
-  *)
-    echo "unexpected glab args: $*" >&2
-    exit 1
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "mr list",
+            r##"[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]"##,
+        )
+        .on("mr update", "updated mr")
+        .fallback_fail("unexpected glab args")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("updated feature/b -> main (!34)"))
@@ -146,26 +100,16 @@ fn submit_dry_run_reports_update_without_calling_update() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "gitlab"]);
     repo.git(["config", "branch.feature/b.stkParent", "main"]);
-    let path = repo.fake_cli(
-        "glab",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  mr\ list*)
-    cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]
-JSON
-    ;;
-  *)
-    echo "unexpected glab args: $*" >&2
-    exit 1
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "mr list",
+            r##"[{"iid":34,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/lararosekelley/git-stk-mirror/-/merge_requests/34"}]"##,
+        )
+        .fallback_fail("unexpected glab args")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--dry-run", "feature/b"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout("would update feature/b -> main (!34)\nsubmit complete: 0 created, 1 updated, 0 skipped\n");
@@ -191,32 +135,16 @@ fn submit_stack_creates_reviews_parent_first() {
     repo.stack().args(["new", "feature/b"]).assert().success();
 
     let log_path = repo.path().join("submit.log");
-    let path = repo.fake_cli(
-        "gh",
-        &format!(
-            r##"#!/usr/bin/env sh
-printf '%s\n' "$*" >> '{log}'
-case "$*" in
-  pr\ list*)
-    printf '[]\n'
-    ;;
-  pr\ create*)
-    printf 'created url\n'
-    ;;
-  *)
-    echo "unexpected gh args: $*" >&2
-    exit 1
-    ;;
-esac
-"##,
-            log = log_path.display()
-        ),
-    );
+    let fake = FakeProvider::new()
+        .log_all("submit.log")
+        .on("pr list", "[]")
+        .on("pr create", "created url")
+        .fallback_fail("unexpected gh args")
+        .install(&repo);
 
     repo.git(["switch", "feature/a"]);
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--stack"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("created feature/a -> main"))
@@ -244,20 +172,13 @@ fn submit_stack_validates_parents_before_provider_calls() {
     repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
     repo.git(["switch", "feature/a"]);
     let log_path = repo.path().join("submit.log");
-    let path = repo.fake_cli(
-        "gh",
-        &format!(
-            r##"#!/usr/bin/env sh
-printf '%s\n' "$*" >> '{log}'
-printf '[]\n'
-"##,
-            log = log_path.display()
-        ),
-    );
+    let fake = FakeProvider::new()
+        .log_all("submit.log")
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--stack"])
-        .env("PATH", path)
         .assert()
         .failure()
         .stderr(predicates::str::contains("feature/a has no stack parent"));
@@ -274,43 +195,25 @@ fn submit_stack_writes_stack_overview_into_review_bodies() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 12*)
-    printf '{"body":"Parent PR description."}\n'
-    ;;
-  pr\ view\ 13*)
-    printf '{"body":"Child PR description."}\n'
-    ;;
-  pr\ edit\ 12\ --body*)
-    printf '%s\n' "$*" > edit-body-12.txt
-    ;;
-  pr\ edit\ 13\ --body*)
-    printf '%s\n' "$*" > edit-body-13.txt
-    ;;
-  pr\ list*feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]
-JSON
-    ;;
-  pr\ list*feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr view 12", r##"{"body":"Parent PR description."}"##)
+        .on("pr view 13", r##"{"body":"Child PR description."}"##)
+        .record("pr edit 12 --body", "edit-body-12.txt", "")
+        .record("pr edit 13 --body", "edit-body-13.txt", "")
+        .on(
+            "feature/a",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]"##,
+        )
+        .on(
+            "feature/b",
+            r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
     repo.git(["switch", "feature/a"]);
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--stack"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("updated stack note in #12"))
@@ -351,40 +254,26 @@ fn submit_links_issue_referenced_by_branch_name() {
     repo.git(["config", "stk.provider", "github"]);
     repo.git(["switch", "-c", "5-fix-thing"]);
     repo.git(["config", "branch.5-fix-thing.stkParent", "main"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 12*)
-    printf '{"body":"Description."}\n'
-    ;;
-  pr\ edit\ 12\ --body*)
-    printf '%s\n' "$*" > edit-body-12.txt
-    ;;
-  pr\ list*5-fix-thing*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"5-fix-thing","url":"https://github.com/owner/repo/pull/12","title":"Fix thing"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr view 12", r##"{"body":"Description."}"##)
+        .record("pr edit 12 --body", "edit-body-12.txt", "")
+        .on(
+            "5-fix-thing",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"5-fix-thing","url":"https://github.com/owner/repo/pull/12","title":"Fix thing"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
     // Dry run announces the link without editing anything.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--dry-run"])
-        .env("PATH", path.clone())
         .assert()
         .success()
         .stdout(predicates::str::contains("would link issue #5 in #12"));
     assert!(!repo.path().join("edit-body-12.txt").exists());
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .arg("submit")
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("linked issue #5 in #12"));
@@ -403,31 +292,21 @@ fn submit_desc_sets_replaces_and_clears_the_description_block() {
 
     // First pass: a body with an existing stack section; the description
     // must land above it.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 12*)
-    printf '{"body":"Intro.\\n\\n<!-- git-stk:stack -->\\nstack list\\n<!-- /git-stk:stack -->"}\n'
-    ;;
-  pr\ edit\ 12\ --body*)
-    printf '%s\n' "$*" > edit-body-12.txt
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "pr view 12",
+            r##"{"body":"Intro.\n\n<!-- git-stk:stack -->\nstack list\n<!-- /git-stk:stack -->"}"##,
+        )
+        .record("pr edit 12 --body", "edit-body-12.txt", "")
+        .on(
+            "feature/a",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--dry-run", "-d", "What and why."])
-        .env("PATH", path.clone())
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -435,9 +314,8 @@ esac
         ));
     assert!(!repo.path().join("edit-body-12.txt").exists());
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "-d", "What and why."])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("set description in #12"));
@@ -453,31 +331,21 @@ esac
 
     // Second pass: a body that already carries a description; an empty
     // --desc clears the block and leaves the rest alone.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 12*)
-    printf '{"body":"Intro.\\n\\n<!-- git-stk:description -->\\nStale.\\n<!-- /git-stk:description -->"}\n'
-    ;;
-  pr\ edit\ 12\ --body*)
-    printf '%s\n' "$*" > edit-body-12.txt
-    ;;
-  *feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on(
+            "pr view 12",
+            r##"{"body":"Intro.\n\n<!-- git-stk:description -->\nStale.\n<!-- /git-stk:description -->"}"##,
+        )
+        .record("pr edit 12 --body", "edit-body-12.txt", "")
+        .on(
+            "feature/a",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "-d", ""])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("cleared description in #12"));
@@ -494,43 +362,25 @@ fn submit_stack_desc_targets_only_the_current_branch() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 12*)
-    printf '{"body":""}\n'
-    ;;
-  pr\ view\ 13*)
-    printf '{"body":""}\n'
-    ;;
-  pr\ edit\ 12\ --body*)
-    printf '%s\n=====\n' "$*" >> edit-body-12.log
-    ;;
-  pr\ edit\ 13\ --body*)
-    printf '%s\n=====\n' "$*" >> edit-body-13.log
-    ;;
-  pr\ list*feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]
-JSON
-    ;;
-  pr\ list*feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr view 12", r##"{"body":""}"##)
+        .on("pr view 13", r##"{"body":""}"##)
+        .record_append("pr edit 12 --body", "edit-body-12.log", "")
+        .record_append("pr edit 13 --body", "edit-body-13.log", "")
+        .on(
+            "feature/a",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]"##,
+        )
+        .on(
+            "feature/b",
+            r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
     // Standing on the leaf: the description belongs to its review alone.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--stack", "-d", "Top summary."])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("set description in #13"));
@@ -553,51 +403,30 @@ fn submit_stack_preserves_merged_ledger_entries() {
     // The bottom PR's body carries a ledger that remembers #11, a review
     // whose branch merged and was deleted long ago. The top PR has never
     // seen it.
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 11*)
-    printf '{"body":"Old description."}\n'
-    ;;
-  pr\ view\ 12*)
-    cat <<'JSON'
-{"body":"Intro.\n\n<!-- git-stk:stack -->\n<!-- git-stk:data [{\"id\":\"#11\",\"url\":\"https://github.com/owner/repo/pull/11\",\"title\":\"Landed\",\"state\":\"merged\"}] -->\n- stale bullets\n<!-- /git-stk:stack -->"}
-JSON
-    ;;
-  pr\ view\ 13*)
-    printf '{"body":""}\n'
-    ;;
-  pr\ edit\ 11\ --body*)
-    printf '%s\n' "$*" > edit-body-11.txt
-    ;;
-  pr\ edit\ 12\ --body*)
-    printf '%s\n' "$*" > edit-body-12.txt
-    ;;
-  pr\ edit\ 13\ --body*)
-    printf '%s\n' "$*" > edit-body-13.txt
-    ;;
-  pr\ list*feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]
-JSON
-    ;;
-  pr\ list*feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr view 11", r##"{"body":"Old description."}"##)
+        .on(
+            "pr view 12",
+            r##"{"body":"Intro.\n\n<!-- git-stk:stack -->\n<!-- git-stk:data [{\"id\":\"#11\",\"url\":\"https://github.com/owner/repo/pull/11\",\"title\":\"Landed\",\"state\":\"merged\"}] -->\n- stale bullets\n<!-- /git-stk:stack -->"}"##,
+        )
+        .on("pr view 13", r##"{"body":""}"##)
+        .record("pr edit 11 --body", "edit-body-11.txt", "")
+        .record("pr edit 12 --body", "edit-body-12.txt", "")
+        .record("pr edit 13 --body", "edit-body-13.txt", "")
+        .on(
+            "feature/a",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]"##,
+        )
+        .on(
+            "feature/b",
+            r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
     repo.git(["switch", "feature/a"]);
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--stack"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("updated stack note in #12"))
@@ -637,43 +466,28 @@ fn submit_stack_repairs_mangled_note_markup() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ view\ 12*)
-    printf '{"body":"Intro."}\n'
-    ;;
-  pr\ view\ 13*)
-    printf '{"body":"Intro.\\n\\n<!-- git-stk:stack -->\\nuser deleted the end marker"}\n'
-    ;;
-  pr\ edit\ 12\ --body*)
-    printf '%s\n' "$*" > edit-body-12.txt
-    ;;
-  pr\ edit\ 13\ --body*)
-    printf '%s\n' "$*" > edit-body-13.txt
-    ;;
-  pr\ list*feature/a*)
-    cat <<'JSON'
-[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]
-JSON
-    ;;
-  pr\ list*feature/b*)
-    cat <<'JSON'
-[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr view 12", r##"{"body":"Intro."}"##)
+        .on(
+            "pr view 13",
+            r##"{"body":"Intro.\n\n<!-- git-stk:stack -->\nuser deleted the end marker"}"##,
+        )
+        .record("pr edit 12 --body", "edit-body-12.txt", "")
+        .record("pr edit 13 --body", "edit-body-13.txt", "")
+        .on(
+            "feature/a",
+            r##"[{"number":12,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/12","title":"Bottom change"}]"##,
+        )
+        .on(
+            "feature/b",
+            r##"[{"number":13,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/13","title":"Top change"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
     repo.git(["switch", "feature/a"]);
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--stack"])
-        .env("PATH", path)
         .assert()
         .success();
 
@@ -691,43 +505,25 @@ fn submit_stack_writes_overview_into_gitlab_descriptions() {
     repo.git(["config", "stk.provider", "gitlab"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "glab",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  mr\ view\ 34*)
-    printf '{"description":""}\n'
-    ;;
-  mr\ view\ 35*)
-    printf '{"description":""}\n'
-    ;;
-  mr\ update\ 35\ --description*)
-    printf '%s\n' "$*" > update-description-args.txt
-    ;;
-  mr\ update\ 34\ --description*)
-    printf 'updated 34\n'
-    ;;
-  mr\ list*feature/a*)
-    cat <<'JSON'
-[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/a","web_url":"https://gitlab.com/owner/repo/-/merge_requests/34","title":"Bottom change"}]
-JSON
-    ;;
-  mr\ list*feature/b*)
-    cat <<'JSON'
-[{"iid":35,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/owner/repo/-/merge_requests/35","title":"Top change"}]
-JSON
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("mr view 34", r##"{"description":""}"##)
+        .on("mr view 35", r##"{"description":""}"##)
+        .record("mr update 35 --description", "update-description-args.txt", "")
+        .on("mr update 34 --description", "updated 34")
+        .on(
+            "feature/a",
+            r##"[{"iid":34,"state":"opened","target_branch":"main","source_branch":"feature/a","web_url":"https://gitlab.com/owner/repo/-/merge_requests/34","title":"Bottom change"}]"##,
+        )
+        .on(
+            "feature/b",
+            r##"[{"iid":35,"state":"opened","target_branch":"feature/a","source_branch":"feature/b","web_url":"https://gitlab.com/owner/repo/-/merge_requests/35","title":"Top change"}]"##,
+        )
+        .fallback("[]")
+        .install(&repo);
 
     repo.git(["switch", "feature/a"]);
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--stack"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("updated stack note in !35"));
@@ -754,25 +550,15 @@ fn submit_stack_push_pushes_branches_before_provider_calls() {
 
     // Bare origin with no branches: submit --push must create them remotely.
     let bare = repo.add_bare_origin(&[]);
-    let gh_path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ create*)
-    printf 'created review\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr create", "created review")
+        .fallback("[]")
+        .install(&repo);
 
     repo.git(["switch", "feature/a"]);
     let assert = repo
-        .stack()
+        .stack_faked(&fake)
         .args(["submit", "--stack", "--push"])
-        .env("PATH", gh_path)
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -814,20 +600,14 @@ fn submit_push_respects_config_and_no_push_overrides_it() {
     repo.commit_file("a.txt", "a\n", "parent change");
 
     let bare = repo.add_bare_origin(&[]);
-    let gh_path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-case "$*" in
-  pr\ create*) printf 'created review\n' ;;
-  *) printf '[]\n' ;;
-esac
-"##,
-    );
+    let fake = FakeProvider::new()
+        .on("pr create", "created review")
+        .fallback("[]")
+        .install(&repo);
 
     // Config enables the push.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit"])
-        .env("PATH", gh_path.clone())
         .assert()
         .success()
         .stdout(predicates::str::contains("pushed feature/a to origin"));
@@ -839,9 +619,8 @@ esac
     // --no-push overrides the config.
     repo.commit_file("a2.txt", "a2\n", "more work");
     let stale = repo.remote_sha(&bare, "feature/a");
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--no-push"])
-        .env("PATH", gh_path)
         .assert()
         .success();
     assert_eq!(repo.remote_sha(&bare, "feature/a"), stale);
@@ -855,16 +634,10 @@ fn submit_push_dry_run_does_not_push() {
     repo.commit_file("a.txt", "a\n", "parent change");
 
     let bare = repo.add_bare_origin(&[]);
-    let gh_path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-printf '[]\n'
-"##,
-    );
+    let fake = FakeProvider::new().fallback("[]").install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--push", "--dry-run"])
-        .env("PATH", gh_path)
         .assert()
         .success()
         .stdout(predicates::str::contains("would push feature/a to origin"));
@@ -883,17 +656,11 @@ fn submit_stack_covers_whole_stack_from_the_leaf() {
     repo.git(["config", "stk.provider", "github"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-printf '[]\n'
-"##,
-    );
+    let fake = FakeProvider::new().fallback("[]").install(&repo);
 
     // Standing on the LEAF: position must not matter.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--stack", "--dry-run"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("would create feature/a -> main"))
@@ -910,17 +677,11 @@ fn submit_downstack_stops_at_the_current_branch() {
     repo.stack().args(["new", "feature/b"]).assert().success();
     repo.stack().args(["new", "feature/c"]).assert().success();
     repo.git(["switch", "feature/b"]);
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-printf '[]\n'
-"##,
-    );
+    let fake = FakeProvider::new().fallback("[]").install(&repo);
 
     // Standing mid-stack: the WIP leaf above stays unsubmitted.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--downstack", "--dry-run"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("would create feature/a -> main"))
@@ -944,28 +705,15 @@ fn submit_draft_flag_and_config_control_creation() {
     repo.git(["switch", "-c", "feature/b"]);
     repo.git(["config", "branch.feature/b.stkParent", "main"]);
     let log_path = repo.path().join("submit.log");
-    let path = repo.fake_cli(
-        "gh",
-        &format!(
-            r##"#!/usr/bin/env sh
-printf '%s\n' "$*" >> '{log}'
-case "$*" in
-  pr\ create*)
-    printf 'created url\n'
-    ;;
-  *)
-    printf '[]\n'
-    ;;
-esac
-"##,
-            log = log_path.display()
-        ),
-    );
+    let fake = FakeProvider::new()
+        .log_all("submit.log")
+        .on("pr create", "created url")
+        .fallback("[]")
+        .install(&repo);
 
     // --draft passes through to creation.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--draft"])
-        .env("PATH", path.clone())
         .assert()
         .success();
     let log = fs::read_to_string(&log_path).expect("submit log");
@@ -974,18 +722,13 @@ esac
     // The config makes drafts the default; --no-draft overrides it.
     fs::remove_file(&log_path).expect("reset log");
     repo.git(["config", "stk.submitDraft", "true"]);
-    repo.stack()
-        .arg("submit")
-        .env("PATH", path.clone())
-        .assert()
-        .success();
+    repo.stack_faked(&fake).arg("submit").assert().success();
     let log = fs::read_to_string(&log_path).expect("submit log");
     assert!(log.contains("--fill --draft"));
 
     fs::remove_file(&log_path).expect("reset log");
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--no-draft"])
-        .env("PATH", path)
         .assert()
         .success();
     let log = fs::read_to_string(&log_path).expect("submit log");
@@ -1027,17 +770,11 @@ fn bare_submit_uses_submit_stack_config() {
     repo.git(["config", "stk.submitStack", "true"]);
     repo.stack().args(["new", "feature/a"]).assert().success();
     repo.stack().args(["new", "feature/b"]).assert().success();
-    let path = repo.fake_cli(
-        "gh",
-        r##"#!/usr/bin/env sh
-printf '[]\n'
-"##,
-    );
+    let fake = FakeProvider::new().fallback("[]").install(&repo);
 
     // Bare submit from the leaf: config turns on whole-stack mode.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--dry-run"])
-        .env("PATH", path.clone())
         .assert()
         .success()
         .stdout(predicates::str::contains("would create feature/a -> main"))
@@ -1046,9 +783,8 @@ printf '[]\n'
         ));
 
     // --no-stack overrides the config back to single-branch.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "--dry-run", "--no-stack"])
-        .env("PATH", path.clone())
         .assert()
         .success()
         .stdout(predicates::str::contains(
@@ -1057,9 +793,8 @@ printf '[]\n'
         .stdout(predicates::str::contains("feature/a -> main").not());
 
     // An explicit branch also means single-branch, config or not.
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["submit", "feature/a", "--dry-run"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("would create feature/a -> main"))

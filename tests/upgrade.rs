@@ -1,24 +1,19 @@
-// These suites drive sh-script provider fakes, so they are Unix-only.
-#![cfg(unix)]
-
 use std::fs;
 mod common;
 
-use common::TestRepo;
+use common::{FakeProvider, TestRepo};
 
 #[test]
 fn upgrade_head_cancels_when_not_confirmed() {
     let repo = TestRepo::new();
-    let path = repo.fake_cli(
-        "cargo",
-        r##"#!/usr/bin/env sh
-touch cargo-ran.txt
-"##,
-    );
+    // If cargo is ever run, it leaves a marker - the test asserts it is not.
+    let fake = FakeProvider::new()
+        .commands(&["cargo"])
+        .record("", "cargo-ran.txt", "")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["upgrade", "--head"])
-        .env("PATH", path)
         .write_stdin("n\n")
         .assert()
         .success()
@@ -30,24 +25,17 @@ touch cargo-ran.txt
 #[test]
 fn upgrade_head_warns_and_runs_cargo_install_when_confirmed() {
     let repo = TestRepo::new();
-    repo.fake_cli(
-        "cargo",
-        r##"#!/usr/bin/env sh
-printf '%s ' "$@" > cargo-args.txt
-"##,
-    );
-    // Stub the freshly installed binary so the post-upgrade asset refresh
-    // never reaches a real git-stk install.
-    let path = repo.fake_cli(
-        "git-stk",
-        r##"#!/usr/bin/env sh
-exit 0
-"##,
-    );
+    // Stub the freshly installed binary (the `setup` call) so the
+    // post-upgrade asset refresh never reaches a real git-stk install.
+    let fake = FakeProvider::new()
+        .commands(&["cargo", "git-stk"])
+        .record("install", "cargo-args.txt", "")
+        .on("setup", "")
+        .fallback("")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["upgrade", "--head"])
-        .env("PATH", path)
         .write_stdin("y\n")
         .assert()
         .success()
@@ -67,22 +55,15 @@ exit 0
 #[test]
 fn upgrade_head_yes_skips_confirmation_prompt() {
     let repo = TestRepo::new();
-    repo.fake_cli(
-        "cargo",
-        r##"#!/usr/bin/env sh
-printf '%s ' "$@" > cargo-args.txt
-"##,
-    );
-    let path = repo.fake_cli(
-        "git-stk",
-        r##"#!/usr/bin/env sh
-exit 0
-"##,
-    );
+    let fake = FakeProvider::new()
+        .commands(&["cargo", "git-stk"])
+        .record("install", "cargo-args.txt", "")
+        .on("setup", "")
+        .fallback("")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["upgrade", "--head", "--yes"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("installed git-stk from HEAD"));
@@ -93,16 +74,13 @@ exit 0
 #[test]
 fn upgrade_head_reports_cargo_install_failure() {
     let repo = TestRepo::new();
-    let path = repo.fake_cli(
-        "cargo",
-        r##"#!/usr/bin/env sh
-exit 1
-"##,
-    );
+    let fake = FakeProvider::new()
+        .commands(&["cargo"])
+        .fallback_fail("")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["upgrade", "--head", "--yes"])
-        .env("PATH", path)
         .assert()
         .failure()
         .stderr(predicates::str::contains(
@@ -141,27 +119,25 @@ fn upgrade_without_receipt_suggests_cargo_install() {
         .stderr(predicates::str::contains("cargo install git-stk --locked"));
 }
 
+// Unix-only: this intercepts git-stk's `setup --refresh` self-invocation by
+// shadowing `git-stk` on PATH. Windows can't be tricked that way - its process
+// search checks the running exe's own dir (the real test binary) before PATH -
+// and the refreshed asset (the man page) is itself a no-op on Windows.
 #[test]
+#[cfg(unix)]
 fn upgrade_head_refreshes_assets_with_new_binary() {
     let repo = TestRepo::new();
-    repo.fake_cli(
-        "cargo",
-        r##"#!/usr/bin/env sh
-exit 0
-"##,
-    );
     // Fake the freshly installed binary: upgrade must invoke it (not itself)
     // so refreshed assets match the new version.
-    let path = repo.fake_cli(
-        "git-stk",
-        r##"#!/usr/bin/env sh
-printf '%s ' "$@" > stk-args.txt
-"##,
-    );
+    let fake = FakeProvider::new()
+        .commands(&["cargo", "git-stk"])
+        .on("install", "")
+        .record("setup", "stk-args.txt", "")
+        .fallback("")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["upgrade", "--head", "--yes"])
-        .env("PATH", path)
         .assert()
         .success()
         .stdout(predicates::str::contains("installed git-stk from HEAD"));
@@ -171,25 +147,22 @@ printf '%s ' "$@" > stk-args.txt
     assert_eq!(recorded.trim(), "setup --refresh");
 }
 
+// Unix-only for the same reason as upgrade_head_refreshes_assets_with_new_binary:
+// the failing `setup --refresh` is a faked git-stk shadowed on PATH, which
+// Windows' exe-dir-first process search bypasses.
 #[test]
+#[cfg(unix)]
 fn upgrade_head_warns_when_asset_refresh_fails() {
     let repo = TestRepo::new();
-    let path = repo.fake_cli(
-        "cargo",
-        r##"#!/usr/bin/env sh
-exit 0
-"##,
-    );
-    repo.fake_cli(
-        "git-stk",
-        r##"#!/usr/bin/env sh
-exit 1
-"##,
-    );
+    let fake = FakeProvider::new()
+        .commands(&["cargo", "git-stk"])
+        .on("install", "")
+        .fail("setup", "")
+        .fallback("")
+        .install(&repo);
 
-    repo.stack()
+    repo.stack_faked(&fake)
         .args(["upgrade", "--head", "--yes"])
-        .env("PATH", path)
         .assert()
         .success()
         .stderr(predicates::str::contains(
