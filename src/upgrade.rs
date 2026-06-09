@@ -37,12 +37,6 @@ pub fn maybe_hint_update() {
         return;
     }
 
-    // Stamp before checking so a failure does not retry until tomorrow.
-    if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    let _ = fs::write(&path, format!("checked={now}\n"));
-
     // The query runs on a thread the process is free to abandon: the
     // command's work is already done, so cap the wait.
     let (sender, receiver) = mpsc::channel();
@@ -52,14 +46,25 @@ pub fn maybe_hint_update() {
             updater.load_receipt().is_ok() && updater.is_update_needed_sync().unwrap_or(false);
         let _ = sender.send(behind);
     });
-    if let Ok(true) = receiver.recv_timeout(Duration::from_secs(2)) {
-        anstream::eprintln!(
-            "{}",
-            crate::style::paint(
-                crate::style::DIM,
-                "a newer git-stk release is available - run `git stk upgrade`"
-            )
-        );
+
+    // On a timeout, leave the stamp untouched so the next command retries
+    // instead of waiting out the daily window on a check that never answered.
+    if let Ok(behind) = receiver.recv_timeout(Duration::from_secs(5)) {
+        // Stamp only once the check actually finished, so a slow network
+        // retries on the next command rather than going quiet for a day.
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        let _ = fs::write(&path, format!("checked={now}\n"));
+        if behind {
+            anstream::eprintln!(
+                "{}",
+                crate::style::paint(
+                    crate::style::DIM,
+                    "a newer git-stk release is available - run `git stk upgrade`"
+                )
+            );
+        }
     }
 }
 

@@ -79,7 +79,18 @@ impl ReviewProvider for GitHubProvider {
             match interpret_checks(out.status.code(), &stdout, &stderr) {
                 ChecksState::Passed => return Ok(true),
                 ChecksState::Failed => return Ok(false),
-                ChecksState::NoneYet if no_checks >= super::CHECK_GRACE_POLLS => return Ok(true),
+                ChecksState::NoneYet if no_checks >= super::CHECK_GRACE_POLLS => {
+                    // "No checks reported" is ambiguous right after a push: a
+                    // repo with no CI, or required checks that have not
+                    // registered yet. If branch protection is gating the
+                    // merge, they exist - keep waiting rather than merging
+                    // early into a block.
+                    if merge_is_gated(review)? {
+                        no_checks = 0;
+                    } else {
+                        return Ok(true);
+                    }
+                }
                 ChecksState::NoneYet => no_checks += 1,
                 // A real pending state resets the grace count: checks exist.
                 ChecksState::Pending => no_checks = 0,
@@ -132,6 +143,36 @@ fn interpret_checks(code: Option<i32>, stdout: &str, stderr: &str) -> ChecksStat
             }
         }
     }
+}
+
+/// Ask GitHub whether branch protection is gating the merge. Used to
+/// disambiguate "no checks reported" right after a push (required checks
+/// exist but have not registered yet) from a repo with no CI at all.
+fn merge_is_gated(review: &ReviewRequest) -> Result<bool> {
+    let out = command_output(
+        "gh",
+        &[
+            "pr",
+            "view",
+            review.id_value(),
+            "--json",
+            "mergeStateStatus",
+        ],
+    )?;
+    Ok(merge_state_is_gated(&out))
+}
+
+/// `BLOCKED` is GitHub's verdict when required checks or reviews are not yet
+/// satisfied - i.e. the merge is gated. Any other state (or unparseable
+/// output) is treated as not gated.
+fn merge_state_is_gated(json: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
+        return false;
+    };
+    value
+        .get("mergeStateStatus")
+        .and_then(serde_json::Value::as_str)
+        == Some("BLOCKED")
 }
 
 fn list_review(branch: &str, state: Option<&str>) -> Result<Option<ReviewRequest>> {
@@ -261,5 +302,18 @@ mod tests {
             interpret_checks(Some(1), "X  lint  1m  failing", ""),
             ChecksState::Failed
         );
+    }
+
+    #[test]
+    fn merge_state_blocked_is_gated() {
+        assert!(merge_state_is_gated(r#"{"mergeStateStatus":"BLOCKED"}"#));
+    }
+
+    #[test]
+    fn merge_state_clean_or_unparseable_is_not_gated() {
+        assert!(!merge_state_is_gated(r#"{"mergeStateStatus":"CLEAN"}"#));
+        assert!(!merge_state_is_gated(r#"{"mergeStateStatus":"UNSTABLE"}"#));
+        assert!(!merge_state_is_gated("{}"));
+        assert!(!merge_state_is_gated("not json"));
     }
 }
