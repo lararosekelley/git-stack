@@ -108,7 +108,7 @@ Local stack metadata:
 git stk new <branch>
 git stk parent [branch]
 git stk children [branch]
-git stk list [--format <markdown|plain>]
+git stk list [--all | --format <markdown|plain>]
 git stk adopt <branch> --parent <parent>
 git stk detach [branch]
 git stk rename [branch] <new-name> [--dry-run]
@@ -124,6 +124,10 @@ warns when an open review still heads the old branch (platforms do not follow lo
   ○ feature/a
 ○ main (trunk)
 ```
+
+`list --all` shows every stack at once instead of just the one you are on - the trunk once at the bottom,
+each stack's tree above it, and any rootless fragments as their own trees - for an overview when several
+stacks are in flight.
 
 `status` and `list` append `hint:` lines pointing at the next command when there is one: `restack` when a
 branch is behind its parent, `submit` when a review base went stale, `sync` when a review in the stack

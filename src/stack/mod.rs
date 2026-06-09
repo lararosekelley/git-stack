@@ -16,7 +16,7 @@ mod snapshot;
 
 pub use nav::{
     behind_parent_hint, checkout_bottom, checkout_child, checkout_parent, checkout_top,
-    print_children, print_parent, print_stack,
+    print_all_stacks, print_children, print_parent, print_stack,
 };
 pub use restack::{abort_restack, continue_restack, restack};
 pub use snapshot::{take as snapshot, undo};

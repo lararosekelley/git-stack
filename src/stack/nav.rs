@@ -183,6 +183,68 @@ pub fn print_stack() -> Result<()> {
     Ok(())
 }
 
+/// Print every stack, not just the current one: the trunk-rooted forest with
+/// a single trunk line at the bottom, and each rootless fragment as its own
+/// tree above it. The branch you are on is marked wherever it appears.
+pub fn print_all_stacks() -> Result<()> {
+    let current = git::current_branch()?;
+    let parents = parent_map()?;
+    let children = children_map(&parents);
+    let trunk = trunk_branch(&git::local_branches()?);
+
+    // The root of every stack: each branch with a stack relationship, walked
+    // up to its topmost ancestor. Trunk-anchored stacks all resolve to the
+    // trunk; rootless fragments resolve to their own top. Lone branches with
+    // no parent or children never enter `parents`, so they are left out.
+    let mut roots = Vec::new();
+    let mut seen = BTreeSet::new();
+    for branch in parents
+        .iter()
+        .flat_map(|(child, parent)| [child.clone(), parent.clone()])
+    {
+        let root = root_for(&branch, &parents);
+        if seen.insert(root.clone()) {
+            roots.push(root);
+        }
+    }
+
+    if roots.is_empty() {
+        println!("no stacked branches");
+        return Ok(());
+    }
+
+    // Render the trunk-rooted forest last so its trunk line sits at the very
+    // bottom; rootless fragments stack above it.
+    roots.sort_by_key(|root| Some(root.as_str()) == trunk.as_deref());
+
+    for (index, root) in roots.iter().enumerate() {
+        if index > 0 {
+            anstream::println!();
+        }
+        let mut lines = Vec::new();
+        collect_tree_lines(
+            root,
+            &current,
+            trunk.as_deref(),
+            &children,
+            0,
+            &mut BTreeSet::new(),
+            &mut lines,
+        );
+        for line in lines.iter().rev() {
+            anstream::println!("{line}");
+        }
+    }
+
+    // Behind-parent hints span every stack.
+    for (branch, parent) in &parents {
+        if let Some(hint) = behind_parent_hint(branch, parent) {
+            anstream::println!("{} {hint}", style::paint(style::HINT, "hint:"));
+        }
+    }
+    Ok(())
+}
+
 /// A restack nudge when `branch` is missing commits from its parent's tip.
 /// Local-only; a missing parent yields nothing.
 pub fn behind_parent_hint(branch: &str, parent: &str) -> Option<String> {
