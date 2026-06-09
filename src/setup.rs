@@ -1,6 +1,7 @@
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
 use anyhow::{Context, Result};
 use clap::CommandFactory;
@@ -8,8 +9,13 @@ use clap::CommandFactory;
 use crate::cli::Cli;
 use crate::prompt::confirm;
 
-/// Marker comment written above the completion line so re-runs can detect it.
+/// Marker comment written above the completion line so re-runs can detect it
+/// (`#` is also a comment in PowerShell).
 const COMPLETION_MARKER: &str = "# added by git-stk setup";
+
+/// The PowerShell completion line, guarded so a removed git-stk never breaks
+/// shell startup.
+const POWERSHELL_LINE: &str = "if (Get-Command git-stk -ErrorAction SilentlyContinue) { git stk completions powershell | Out-String | Invoke-Expression }";
 
 pub fn setup(yes: bool, refresh: bool) -> Result<()> {
     if refresh {
@@ -58,7 +64,7 @@ fn man_dir() -> Result<PathBuf> {
 /// Append a completion-sourcing line to the detected shell's rc file, once.
 fn wire_completions(yes: bool) -> Result<()> {
     let Some((shell, rc_path, line)) = completion_target()? else {
-        println!("could not detect a supported shell from $SHELL");
+        println!("could not detect a supported shell");
         println!("see the README for manual completion setup");
         return Ok(());
     };
@@ -96,6 +102,12 @@ fn wire_completions(yes: bool) -> Result<()> {
         updated.push('\n');
     }
     updated.push_str(&format!("\n{COMPLETION_MARKER}\n{line}\n"));
+    // The rc file's directory may not exist yet (fish's ~/.config/fish, a
+    // never-created PowerShell profile dir).
+    if let Some(parent) = rc_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
     fs::write(&rc_path, updated)
         .with_context(|| format!("failed to write {}", rc_path.display()))?;
     println!("added {shell} completion setup to {}", rc_path.display());
@@ -125,18 +137,26 @@ fn print_completion_hint() -> Result<()> {
     Ok(())
 }
 
-/// Resolve (shell name, rc file, completion line) from $SHELL. The lines
-/// guard on the binary existing so a removed git-stk never breaks shell
-/// startup.
+/// Resolve (shell name, rc file, completion line). A POSIX shell from $SHELL
+/// wins (covers Git Bash and WSL on Windows); otherwise fall back to
+/// PowerShell. The lines guard on the binary existing so a removed git-stk
+/// never breaks shell startup.
 fn completion_target() -> Result<Option<(&'static str, PathBuf, &'static str)>> {
+    if let Some(target) = posix_shell_target() {
+        return Ok(Some(target));
+    }
+    Ok(powershell_target())
+}
+
+/// A bash/zsh/fish target from $SHELL, or None when $SHELL is unset/unknown
+/// or HOME is missing (e.g. native Windows). Never an error - we fall
+/// through to PowerShell.
+fn posix_shell_target() -> Option<(&'static str, PathBuf, &'static str)> {
     let shell = env::var("SHELL").unwrap_or_default();
     let shell = shell.rsplit('/').next().unwrap_or_default();
+    let home = env::var_os("HOME").map(PathBuf::from)?;
 
-    let home = env::var_os("HOME")
-        .map(PathBuf::from)
-        .context("cannot locate home directory; set HOME")?;
-
-    let target = match shell {
+    match shell {
         "bash" => Some((
             "bash",
             home.join(".bashrc"),
@@ -153,6 +173,28 @@ fn completion_target() -> Result<Option<(&'static str, PathBuf, &'static str)>> 
             "command -q git-stk; and git stk completions fish | source",
         )),
         _ => None,
-    };
-    Ok(target)
+    }
+}
+
+/// PowerShell's `$PROFILE`, when a PowerShell is on PATH. Asking the shell
+/// itself is the only reliable way to get the path - it differs between
+/// PowerShell 7 and Windows PowerShell 5.1, and Documents is often
+/// OneDrive-relocated.
+fn powershell_target() -> Option<(&'static str, PathBuf, &'static str)> {
+    for exe in ["pwsh", "powershell"] {
+        let Ok(output) = Command::new(exe)
+            .args(["-NoProfile", "-Command", "$PROFILE"])
+            .output()
+        else {
+            continue;
+        };
+        if !output.status.success() {
+            continue;
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if !path.is_empty() {
+            return Some(("PowerShell", PathBuf::from(path), POWERSHELL_LINE));
+        }
+    }
+    None
 }
