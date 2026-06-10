@@ -102,3 +102,81 @@ fn absorb_respects_include_unstaged_config() {
         .success()
         .stdout(predicates::str::contains("foo.txt:1 -> feature/a"));
 }
+
+#[test]
+fn absorb_folds_a_fix_into_its_owning_commit() {
+    let repo = stack();
+    repo.write("foo.txt", "alpha fixed\n");
+    repo.git(["add", "foo.txt"]);
+
+    repo.stack()
+        .args(["absorb"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("absorbed 1 hunk into 1 commit"));
+
+    // The fix lands in feature/a's existing commit, not a new one.
+    assert_eq!(repo.git(["show", "feature/a:foo.txt"]), "alpha fixed");
+    assert_eq!(repo.git(["rev-list", "--count", "main..feature/a"]), "1");
+    // Nothing left in the worktree.
+    assert!(repo.git(["status", "--porcelain"]).is_empty());
+}
+
+#[test]
+fn absorb_folds_into_multiple_commits_across_branches() {
+    let repo = stack();
+    repo.write("foo.txt", "alpha fixed\n");
+    repo.write("bar.txt", "beta fixed\n");
+    repo.git(["add", "foo.txt", "bar.txt"]);
+
+    repo.stack()
+        .args(["absorb"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("absorbed 2 hunks into 2 commits"));
+
+    assert_eq!(repo.git(["show", "feature/a:foo.txt"]), "alpha fixed");
+    assert_eq!(repo.git(["show", "feature/b:bar.txt"]), "beta fixed");
+    assert!(repo.git(["status", "--porcelain"]).is_empty());
+}
+
+#[test]
+fn absorb_leaves_unattributable_changes_in_place() {
+    let repo = stack();
+    repo.write("foo.txt", "alpha fixed\n"); // -> feature/a
+    repo.write("README.md", "# changed\n"); // trunk-owned
+    repo.git(["add", "foo.txt", "README.md"]);
+
+    repo.stack()
+        .args(["absorb"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("absorbed 1 hunk into 1 commit"))
+        .stdout(predicates::str::contains(
+            "README.md:1 owned by a commit outside the stack",
+        ));
+
+    // foo folded; README untouched in history but kept in the worktree.
+    assert_eq!(repo.git(["show", "feature/a:foo.txt"]), "alpha fixed");
+    assert_eq!(repo.git(["show", "HEAD:README.md"]), "# test repo");
+    assert_eq!(
+        std::fs::read_to_string(repo.path().join("README.md")).expect("README"),
+        "# changed\n"
+    );
+}
+
+#[test]
+fn absorb_requires_running_from_a_leaf() {
+    let repo = stack();
+    repo.git(["switch", "feature/a"]); // feature/b sits above it
+
+    repo.write("foo.txt", "alpha fixed\n");
+    repo.git(["add", "foo.txt"]);
+
+    repo.stack()
+        .args(["absorb"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("run `git stk absorb`"))
+        .stderr(predicates::str::contains("feature/b"));
+}

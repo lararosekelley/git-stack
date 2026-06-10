@@ -36,9 +36,9 @@ impl Run for Absorb {
 
         let current = git::current_branch()?;
         let owners = commit_owners(&current)?;
-        let routes: Vec<Route> = parse_hunks(&diff)
+        let routes: Vec<Route> = parse_diff(&diff)
             .into_iter()
-            .map(|hunk| route(hunk, &owners))
+            .flat_map(|file| file.into_routes(&owners))
             .collect::<Result<_>>()?;
 
         if self.dry_run {
@@ -46,40 +46,170 @@ impl Run for Absorb {
             return Ok(());
         }
 
-        // TODO(absorb apply): the fixup + autosquash + restack apply lands in
-        // the next change; until then preview with --dry-run.
-        let _ = routes;
-        bail!("applying absorbed changes is not wired up yet - re-run with --dry-run to preview");
+        apply(&current, routes)
     }
 }
 
-/// A single diff hunk, located by the lines it touches in HEAD.
-struct Hunk {
-    file: String,
-    /// First HEAD line the hunk modifies (1-based).
-    pre_start: usize,
-    /// How many HEAD lines it modifies; zero for a pure insertion.
-    pre_len: usize,
+/// Fold the attributed hunks into their target commits and settle the stack.
+/// Atomic: if the rewrite hits a conflict it is aborted and rolled back so
+/// the working tree is left exactly as it was.
+fn apply(current: &str, routes: Vec<Route>) -> Result<()> {
+    // The rewrite leans on `rebase --update-refs` to carry every affected
+    // branch ref, so it must cover the whole line: run from a leaf, with no
+    // branch forking off the path below it.
+    let path = stack::path_from_root(current)?;
+    for branch in &path {
+        for child in stack::children_for_branch(branch)? {
+            if !path.contains(&child) {
+                bail!(
+                    "{branch} has a branch above it ({child}); run `git stk absorb` \
+                     from the top of a single line of the stack"
+                );
+            }
+        }
+    }
+
+    let targets = group_targets(&routes);
+    if targets.is_empty() {
+        bail!("no changes could be attributed to a stack commit (try `--dry-run`)");
+    }
+    if !git::supports_rebase_update_refs()? {
+        bail!("absorb needs a Git that supports `rebase --update-refs` (2.38+)");
+    }
+
+    let base = absorb_base(&path)?;
+    stack::snapshot("absorb");
+    let orig_head = git::rev_parse("HEAD")?;
+
+    // Move every change to the worktree, then restage and commit each
+    // target's hunks as a fixup! of its commit.
+    git::reset_index()?;
+    for (sha, hunks) in &targets {
+        let staged = git::apply_cached(&build_patch(hunks)).and_then(|()| git::commit_fixup(sha));
+        if let Err(error) = staged {
+            let _ = git::reset_soft(&orig_head);
+            return Err(error.context("could not stage the fixes to absorb"));
+        }
+    }
+
+    // Unattributed hunks stay in the worktree; stash them so the rebase runs
+    // on a clean tree, and restore them afterward.
+    let stashed = !git::worktree_is_clean()?;
+    if stashed {
+        git::stash_push()?;
+    }
+
+    if git::rebase_autosquash(&base, true).is_err() {
+        let _ = git::rebase_abort();
+        let _ = git::reset_soft(&orig_head);
+        if stashed {
+            let _ = git::stash_pop();
+        }
+        bail!(
+            "absorb hit a conflict folding the fixes in - rolled back, nothing changed; \
+             amend those commits manually (`git stk down`, edit, `git stk restack`)"
+        );
+    }
+
+    if stashed {
+        git::stash_pop()?;
+    }
+    for (index, branch) in path.iter().enumerate() {
+        let parent = if index == 0 {
+            stack::parent_for_branch(branch)?
+        } else {
+            Some(path[index - 1].clone())
+        };
+        if let Some(parent) = parent {
+            stack::record_base(branch, &parent);
+        }
+    }
+
+    report_applied(&targets, &routes, &path)
 }
 
-enum Route {
-    Absorb {
-        file: String,
-        line: usize,
-        branch: String,
-        sha: String,
-        subject: String,
-    },
-    Skip {
-        file: String,
-        line: usize,
-        reason: String,
-    },
+/// The commit each target absorbs into, with the hunks bound for it, oldest
+/// commit first.
+fn group_targets(routes: &[Route]) -> Vec<(String, Vec<&Route>)> {
+    let mut order = Vec::new();
+    let mut by_sha: BTreeMap<String, Vec<&Route>> = BTreeMap::new();
+    for route in routes {
+        if let Route::Absorb { sha, .. } = route {
+            if !by_sha.contains_key(sha) {
+                order.push(sha.clone());
+            }
+            by_sha.entry(sha.clone()).or_default().push(route);
+        }
+    }
+    order
+        .into_iter()
+        .map(|sha| {
+            let hunks = by_sha.remove(&sha).unwrap_or_default();
+            (sha, hunks)
+        })
+        .collect()
+}
+
+/// Reassemble a patch for one target: each file's header once, then its
+/// hunks, in file order.
+fn build_patch(hunks: &[&Route]) -> String {
+    struct FilePatch<'a> {
+        file: &'a str,
+        header: &'a [String],
+        bodies: Vec<&'a [String]>,
+    }
+
+    let mut by_file: Vec<FilePatch> = Vec::new();
+    for route in hunks {
+        if let Route::Absorb {
+            file, header, body, ..
+        } = route
+        {
+            match by_file.iter_mut().find(|patch| patch.file == file) {
+                Some(patch) => patch.bodies.push(body),
+                None => by_file.push(FilePatch {
+                    file,
+                    header,
+                    bodies: vec![body],
+                }),
+            }
+        }
+    }
+
+    let mut patch = String::new();
+    for file in by_file {
+        for line in file.header {
+            patch.push_str(line);
+            patch.push('\n');
+        }
+        for body in file.bodies {
+            for line in body {
+                patch.push_str(line);
+                patch.push('\n');
+            }
+        }
+    }
+    patch
+}
+
+/// The commit `base..HEAD` rebases onto: the bottom branch's parent, or its
+/// recorded fork point when the bottom is rootless.
+fn absorb_base(path: &[String]) -> Result<String> {
+    let Some(bottom) = path.first() else {
+        bail!("current branch is not in a stack");
+    };
+    if let Some(parent) = stack::parent_for_branch(bottom)? {
+        return Ok(parent);
+    }
+    if let Some(base) = stack::base_for_branch(bottom)? {
+        return Ok(base);
+    }
+    bail!("could not determine the stack base for {bottom}")
 }
 
 /// Map every stack commit (current branch and below) to the branch that owns
-/// it, so a blamed sha resolves to a branch in the routing table. Commits
-/// outside this map - the trunk's, or older - are not absorbable.
+/// it, so a blamed sha resolves to a branch. Commits outside this map - the
+/// trunk's, or older - are not absorbable.
 fn commit_owners(current: &str) -> Result<BTreeMap<String, String>> {
     let path = stack::path_from_root(current)?; // bottom -> current, parent-first
     let mut owners = BTreeMap::new();
@@ -92,7 +222,6 @@ fn commit_owners(current: &str) -> Result<BTreeMap<String, String>> {
         };
         let range = match parent {
             Some(parent) => format!("{parent}..{branch}"),
-            // A rootless bottom: fall back to its recorded fork point.
             None => match stack::base_for_branch(branch)? {
                 Some(base) => format!("{base}..{branch}"),
                 None => continue,
@@ -105,62 +234,129 @@ fn commit_owners(current: &str) -> Result<BTreeMap<String, String>> {
     Ok(owners)
 }
 
-fn route(hunk: Hunk, owners: &BTreeMap<String, String>) -> Result<Route> {
-    let skip = |reason: &str| Route::Skip {
-        file: hunk.file.clone(),
-        line: hunk.pre_start,
-        reason: reason.to_owned(),
+/// A diff for one file: its header lines (verbatim, for re-applying) and its
+/// hunks.
+struct FileDiff {
+    path: String,
+    from_path: String,
+    header: Vec<String>,
+    hunks: Vec<RawHunk>,
+}
+
+struct RawHunk {
+    pre_start: usize,
+    pre_len: usize,
+    body: Vec<String>,
+}
+
+impl FileDiff {
+    /// Attribute each hunk to a commit (or a reason it cannot be).
+    fn into_routes(self, owners: &BTreeMap<String, String>) -> Vec<Result<Route>> {
+        let file = self.path;
+        let header = self.header;
+        self.hunks
+            .into_iter()
+            .map(|hunk| route_hunk(&file, &header, hunk, owners))
+            .collect()
+    }
+}
+
+enum Route {
+    Absorb {
+        file: String,
+        line: usize,
+        header: Vec<String>,
+        body: Vec<String>,
+        branch: String,
+        sha: String,
+        subject: String,
+    },
+    Skip {
+        file: String,
+        line: usize,
+        reason: String,
+    },
+}
+
+fn route_hunk(
+    file: &str,
+    header: &[String],
+    hunk: RawHunk,
+    owners: &BTreeMap<String, String>,
+) -> Result<Route> {
+    let skip = |reason: &str| {
+        Ok(Route::Skip {
+            file: file.to_owned(),
+            line: hunk.pre_start,
+            reason: reason.to_owned(),
+        })
     };
 
     if hunk.pre_len == 0 {
-        return Ok(skip("added lines - no commit to attribute"));
+        return skip("added lines - no commit to attribute");
     }
 
-    let shas = git::blame_line_shas(&hunk.file, hunk.pre_start, hunk.pre_len)?;
+    let shas = git::blame_line_shas(file, hunk.pre_start, hunk.pre_len)?;
     match shas.as_slice() {
-        [] => Ok(skip("could not attribute")),
+        [] => skip("could not attribute"),
         [sha] => match owners.get(sha) {
             Some(branch) => Ok(Route::Absorb {
-                file: hunk.file,
+                file: file.to_owned(),
                 line: hunk.pre_start,
+                header: header.to_vec(),
+                body: hunk.body,
                 branch: branch.clone(),
                 sha: sha.clone(),
                 subject: git::commit_subject(sha)?,
             }),
-            None => Ok(skip("owned by a commit outside the stack")),
+            None => skip("owned by a commit outside the stack"),
         },
-        _ => Ok(skip("spans multiple commits")),
+        _ => skip("spans multiple commits"),
     }
 }
 
-/// Parse a `git diff --unified=0` into hunks. The pre-image range `-A,B` of
-/// each `@@` header is the slice of HEAD the hunk touches.
-fn parse_hunks(diff: &str) -> Vec<Hunk> {
-    let mut hunks = Vec::new();
-    let mut from_path = String::new();
-    let mut file = String::new();
+/// Parse a `git diff --unified=0` into per-file diffs.
+fn parse_diff(diff: &str) -> Vec<FileDiff> {
+    let mut files: Vec<FileDiff> = Vec::new();
 
     for line in diff.lines() {
+        if line.starts_with("diff --git ") {
+            files.push(FileDiff {
+                path: String::new(),
+                from_path: String::new(),
+                header: vec![line.to_owned()],
+                hunks: Vec::new(),
+            });
+            continue;
+        }
+        let Some(file) = files.last_mut() else {
+            continue;
+        };
+
         if let Some(path) = line.strip_prefix("--- ") {
-            from_path = strip_diff_prefix(path);
+            file.from_path = strip_diff_prefix(path);
+            file.header.push(line.to_owned());
         } else if let Some(path) = line.strip_prefix("+++ ") {
-            // A deletion targets /dev/null; attribute it to the old path.
-            file = match strip_diff_prefix(path).as_str() {
-                "/dev/null" => from_path.clone(),
+            file.path = match strip_diff_prefix(path).as_str() {
+                "/dev/null" => file.from_path.clone(),
                 resolved => resolved.to_owned(),
             };
-        } else if let Some(rest) = line.strip_prefix("@@ ")
-            && let Some((pre_start, pre_len)) = parse_pre_image(rest)
-            && !file.is_empty()
-        {
-            hunks.push(Hunk {
-                file: file.clone(),
-                pre_start,
-                pre_len,
-            });
+            file.header.push(line.to_owned());
+        } else if let Some(rest) = line.strip_prefix("@@ ") {
+            if let Some((pre_start, pre_len)) = parse_pre_image(rest) {
+                file.hunks.push(RawHunk {
+                    pre_start,
+                    pre_len,
+                    body: vec![line.to_owned()],
+                });
+            }
+        } else if let Some(hunk) = file.hunks.last_mut() {
+            hunk.body.push(line.to_owned());
+        } else {
+            file.header.push(line.to_owned());
         }
     }
-    hunks
+    files
 }
 
 /// `a/foo`, `b/foo`, or `/dev/null` -> the bare path.
@@ -172,8 +368,7 @@ fn strip_diff_prefix(path: &str) -> String {
 }
 
 /// From a hunk header body like "-12,3 +12,2 @@ ...", read the pre-image
-/// `(start, len)`. A missing length means one line; a zero start (pure add
-/// against an empty side) keeps len zero.
+/// `(start, len)`. A missing length means one line.
 fn parse_pre_image(rest: &str) -> Option<(usize, usize)> {
     let token = rest.split_whitespace().next()?.strip_prefix('-')?;
     let (start, len) = match token.split_once(',') {
@@ -193,7 +388,41 @@ fn print_plan(routes: &[Route]) {
         routes.len(),
         if routes.len() == 1 { "" } else { "s" }
     );
+    print_absorb_lines(routes);
+    print_skips(routes);
+}
 
+fn report_applied(
+    targets: &[(String, Vec<&Route>)],
+    routes: &[Route],
+    path: &[String],
+) -> Result<()> {
+    let hunks: usize = targets.iter().map(|(_, hunks)| hunks.len()).sum();
+    anstream::println!(
+        "{}",
+        style::success(&format!(
+            "absorbed {hunks} hunk{} into {} commit{}",
+            if hunks == 1 { "" } else { "s" },
+            targets.len(),
+            if targets.len() == 1 { "" } else { "s" }
+        ))
+    );
+    print_absorb_lines(routes);
+    print_skips(routes);
+
+    let remote = settings::remote()?;
+    anstream::println!("remote branches may be stale; push them with:");
+    anstream::println!(
+        "{}",
+        style::dim(&format!(
+            "  git push --force-with-lease {remote} {}",
+            path.join(" ")
+        ))
+    );
+    Ok(())
+}
+
+fn print_absorb_lines(routes: &[Route]) {
     for route in routes {
         if let Route::Absorb {
             file,
@@ -201,27 +430,30 @@ fn print_plan(routes: &[Route]) {
             branch,
             sha,
             subject,
+            ..
         } = route
         {
             anstream::println!(
-                "  {}:{line} -> {} {}",
-                file,
+                "  {file}:{line} -> {} {}",
                 style::branch(branch),
                 style::dim(&format!("{} {subject}", &sha[..7.min(sha.len())]))
             );
         }
     }
+}
 
+fn print_skips(routes: &[Route]) {
     let skipped: Vec<&Route> = routes
         .iter()
         .filter(|route| matches!(route, Route::Skip { .. }))
         .collect();
-    if !skipped.is_empty() {
-        anstream::println!("{}", style::dim("unabsorbed (left in place):"));
-        for route in skipped {
-            if let Route::Skip { file, line, reason } = route {
-                anstream::println!("  {file}:{line} {}", style::dim(reason));
-            }
+    if skipped.is_empty() {
+        return;
+    }
+    anstream::println!("{}", style::dim("unabsorbed (left in place):"));
+    for route in skipped {
+        if let Route::Skip { file, line, reason } = route {
+            anstream::println!("  {file}:{line} {}", style::dim(reason));
         }
     }
 }
