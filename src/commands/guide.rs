@@ -21,13 +21,18 @@ const TOPICS: &[(&str, &str, Tour)] = &[
         conflicts,
     ),
     ("repair", "rebuild lost stack metadata", repair),
+    (
+        "absorb",
+        "fold review fixes back into the commits they belong to",
+        absorb,
+    ),
 ];
 
 /// Walk the stacked workflow in a disposable sandbox repository.
 #[derive(Debug, clap::Args)]
 pub struct Guide {
     /// Which tour to run; omit for a menu.
-    #[arg(value_parser = clap::builder::PossibleValuesParser::new(["intro", "conflicts", "repair"]))]
+    #[arg(value_parser = clap::builder::PossibleValuesParser::new(["intro", "conflicts", "repair", "absorb"]))]
     topic: Option<String>,
 }
 
@@ -242,6 +247,53 @@ fn repair(sandbox: &Path) -> Result<()> {
     Ok(())
 }
 
+fn absorb(sandbox: &Path) -> Result<()> {
+    banner("1/3 - fixes scattered across the stack");
+    say("A two-branch stack, each branch owning one file:");
+    run_stk(sandbox, &["new", "feature/login"])?;
+    commit(
+        sandbox,
+        "login.txt",
+        "username + password form\n",
+        "add login form",
+    )?;
+    run_stk(sandbox, &["new", "feature/avatar"])?;
+    commit(sandbox, "avatar.txt", "round avatars\n", "add avatars")?;
+    say("Review comes back: two small fixes, one on each branch's file.");
+    say("You make both edits from the top and stage them, as usual:");
+    stage_fix(sandbox, "login.txt", "username + password form, with 2FA\n")?;
+    stage_fix(sandbox, "avatar.txt", "round avatars, lazy-loaded\n")?;
+    say("Both fixes sit staged together, but each belongs to a different commit");
+    say("further down the stack:");
+    run_stk(sandbox, &["status"])?;
+    if !proceed()? {
+        return Ok(());
+    }
+
+    banner("2/3 - preview where each hunk lands");
+    say("`absorb` blames every staged hunk and routes it to the commit that");
+    say("introduced the lines it touches. `--dry-run` shows the plan first:");
+    run_stk(sandbox, &["absorb", "--dry-run"])?;
+    if !proceed()? {
+        return Ok(());
+    }
+
+    banner("3/3 - fold them in");
+    say("Run it for real: each fix becomes a `fixup!` of its owning commit, an");
+    say("autosquash rebase folds them in, and every branch ref rides along:");
+    run_stk(sandbox, &["absorb"])?;
+    say("The history reads as if the fixes were always there - no extra commits:");
+    shell_step("git log --oneline main..feature/avatar");
+    git(
+        sandbox,
+        &["--no-pager", "log", "--oneline", "main..feature/avatar"],
+    )?;
+    println!();
+    say("Hunks that cannot be attributed - brand-new lines, trunk-owned lines, a");
+    say("hunk spanning two commits - are left staged and reported, never guessed.");
+    Ok(())
+}
+
 fn setup_sandbox(sandbox: &Path) -> Result<()> {
     fs::create_dir_all(sandbox).context("failed to create the sandbox")?;
     git(sandbox, &["init", "-q", "-b", "main"])?;
@@ -297,6 +349,14 @@ fn run_stk_failing(sandbox: &Path, args: &[&str]) -> Result<()> {
 
 /// Resolve a conflicted file: write the merged contents and stage them.
 fn resolve(sandbox: &Path, file: &str, contents: &str) -> Result<()> {
+    shell_step(&format!("edit {file}, then git add {file}"));
+    fs::write(sandbox.join(file), contents).context("failed to write sandbox file")?;
+    git(sandbox, &["add", file])
+}
+
+/// Edit a tracked file and stage the change, without committing - a review
+/// fix waiting to be absorbed.
+fn stage_fix(sandbox: &Path, file: &str, contents: &str) -> Result<()> {
     shell_step(&format!("edit {file}, then git add {file}"));
     fs::write(sandbox.join(file), contents).context("failed to write sandbox file")?;
     git(sandbox, &["add", file])
