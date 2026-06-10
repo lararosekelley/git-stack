@@ -42,6 +42,7 @@ fn main() -> ExitCode {
         Command::Detach(command) => command.run(),
         Command::Rename(command) => command.run(),
         Command::Restack(command) => command.run(),
+        Command::Run(command) => command.run(),
         Command::Continue(command) => command.run(),
         Command::Abort(command) => command.run(),
         Command::Undo(command) => command.run(),

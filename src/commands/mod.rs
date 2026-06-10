@@ -26,6 +26,7 @@ pub mod rename;
 pub mod repair;
 pub mod restack;
 pub mod review;
+pub mod run;
 pub mod setup;
 pub mod status;
 pub mod submit;

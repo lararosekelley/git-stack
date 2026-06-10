@@ -161,10 +161,16 @@ git stk down          # towards the trunk (parent)
 git stk top           # jump to the leaf of the stack
 git stk bottom        # jump to the branch just above the trunk
 git stk restack [--update-refs | --no-update-refs] [--push | --no-push] [--dry-run]
+git stk run [--fail-fast] -- <command>   # run a command on each branch, bottom-up
 git stk continue
 git stk abort
 git stk undo
 ```
+
+`run` checks out each branch bottom-up and runs the command (e.g. `git stk run -- cargo test`), printing a
+per-branch pass/fail summary and exiting non-zero if any branch failed - a quick way to confirm each PR is
+independently green before submitting. `--fail-fast` stops at the first failure. It refuses a dirty
+worktree and returns you to the branch you started on.
 
 `undo` reverses the last stack-rewriting command - `restack`, `sync`, `merge`, `cleanup`, or `rename` -
 restoring local branch tips and stack metadata (it even recreates a branch `cleanup` deleted). It is local
