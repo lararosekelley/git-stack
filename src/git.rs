@@ -234,6 +234,81 @@ pub fn commit_subject(sha: &str) -> Result<String> {
         .with_context(|| format!("failed to read subject of {sha}"))
 }
 
+/// Stage a unified-0 patch into the index. `--unidiff-zero` is required for
+/// git to accept the zero-context hunks absorb works with.
+pub fn apply_cached(patch: &str) -> Result<()> {
+    let mut child = Command::new("git")
+        .args(["apply", "--cached", "--unidiff-zero"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to run git apply")?;
+    {
+        let mut stdin = child.stdin.take().context("git apply has no stdin")?;
+        stdin
+            .write_all(patch.as_bytes())
+            .context("failed to write patch to git apply")?;
+    }
+    let output = child
+        .wait_with_output()
+        .context("failed to run git apply")?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(command_error("git apply", &output.stderr))
+    }
+}
+
+/// Commit the staged index as a `fixup!` of `sha`, for a later autosquash
+/// rebase to fold in. Skips hooks: these are internal, transient commits.
+pub fn commit_fixup(sha: &str) -> Result<()> {
+    status(&["commit", "--no-verify", &format!("--fixup={sha}")])
+        .with_context(|| format!("failed to create fixup commit for {sha}"))
+}
+
+/// Unstage everything, leaving the worktree contents untouched.
+pub fn reset_index() -> Result<()> {
+    status(&["reset", "--quiet"]).context("failed to reset the index")
+}
+
+/// Move HEAD to `sha`, returning any commits after it to the index.
+pub fn reset_soft(sha: &str) -> Result<()> {
+    status(&["reset", "--soft", sha]).with_context(|| format!("failed to reset to {sha}"))
+}
+
+/// Stash tracked worktree changes; pair with [`stash_pop`].
+pub fn stash_push() -> Result<()> {
+    status(&["stash", "push", "--quiet"]).context("failed to stash changes")
+}
+
+/// Restore the most recently stashed changes.
+pub fn stash_pop() -> Result<()> {
+    status(&["stash", "pop", "--quiet"]).context("failed to restore stashed changes")
+}
+
+/// Rebase `base..HEAD`, folding `fixup!` commits into their targets. The
+/// generated todo is accepted unedited, so it needs no terminal.
+pub fn rebase_autosquash(base: &str, update_refs: bool) -> Result<()> {
+    let mut args = vec!["rebase", "--interactive", "--autosquash"];
+    if update_refs {
+        args.push("--update-refs");
+    }
+    args.push(base);
+
+    let output = Command::new("git")
+        .args(&args)
+        .env("GIT_SEQUENCE_EDITOR", "true")
+        .env("GIT_EDITOR", "true")
+        .output()
+        .context("failed to run git rebase")?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(command_error("git rebase --autosquash", &output.stderr))
+    }
+}
+
 pub fn is_ancestor(ancestor: &str, descendant: &str) -> Result<bool> {
     let output = Command::new("git")
         .args(["merge-base", "--is-ancestor", ancestor, descendant])

@@ -171,6 +171,7 @@ git stk top           # jump to the leaf of the stack
 git stk bottom        # jump to the branch just above the trunk
 git stk restack [--update-refs | --no-update-refs] [--push | --no-push] [--dry-run]
 git stk run [--fail-fast] -- <command>   # run a command on each branch, bottom-up
+git stk absorb [--dry-run] [--include-unstaged]
 git stk continue
 git stk abort
 git stk undo
@@ -180,6 +181,14 @@ git stk undo
 per-branch pass/fail summary and exiting non-zero if any branch failed - a quick way to confirm each PR is
 independently green before submitting. `--fail-fast` stops at the first failure. It refuses a dirty
 worktree and returns you to the branch you started on.
+
+`absorb` takes review fixes scattered across the stack and folds each into the commit that introduced the
+lines it touches: stage the fixes (`git add`), then `git stk absorb` blames each hunk, amends it into its
+owning commit via a fixup + autosquash rebase, and carries every branch ref along. `--dry-run` prints the
+hunk -> commit routing first; `--include-unstaged` (or `stk.absorbIncludeUnstaged`) also takes unstaged
+tracked edits. Hunks it cannot attribute - new lines, trunk-owned lines, lines spanning commits - are left
+in place and reported. Run it from the top of a single line of the stack; it is atomic, rolling back
+untouched if the rewrite hits a conflict.
 
 `undo` reverses the last stack-rewriting command - `restack`, `sync`, `merge`, `cleanup`, or `rename` -
 restoring local branch tips and stack metadata (it even recreates a branch `cleanup` deleted). It is local
@@ -302,6 +311,8 @@ Everything is optional; defaults shown below:
     mergeWait = true
     ; Open new reviews as drafts. Default: false.
     submitDraft = true
+    ; `absorb` also folds unstaged tracked edits, not just staged ones. Default: false.
+    absorbIncludeUnstaged = true
     ; Skip the once-a-day check for a newer release. Default: false.
     noUpdateCheck = true
 ```
