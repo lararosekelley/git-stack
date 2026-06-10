@@ -21,13 +21,17 @@ pub struct List {
     /// Render a shareable summary instead of the tree.
     #[arg(long, value_enum)]
     format: Option<Format>,
+    /// Show every stack, not just the one you are on.
+    #[arg(long, conflicts_with = "format")]
+    all: bool,
 }
 
 impl Run for List {
     fn run(self) -> Result<()> {
-        match self.format {
-            Some(format) => list_formatted(format),
-            None => crate::stack::print_stack(),
+        match (self.format, self.all) {
+            (Some(format), _) => list_formatted(format),
+            (None, true) => crate::stack::print_all_stacks(),
+            (None, false) => crate::stack::print_stack(),
         }
     }
 }

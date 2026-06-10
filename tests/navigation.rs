@@ -355,3 +355,68 @@ fn list_colors_only_when_the_terminal_wants_it() {
         .stdout(predicates::str::contains("\u{1b}["))
         .stdout(predicates::str::contains("created"));
 }
+
+/// A trunk-anchored stack (main <- feature/a) plus a rootless fragment
+/// (feature/x <- feature/y, adopted with no trunk anchor).
+fn two_stacks() -> TestRepo {
+    let repo = TestRepo::new();
+    repo.stack().args(["new", "feature/a"]).assert().success();
+
+    repo.git(["switch", "main"]);
+    repo.git(["switch", "-c", "feature/x"]);
+    repo.git(["switch", "-c", "feature/y"]);
+    repo.stack()
+        .args(["adopt", "feature/y", "--parent", "feature/x"])
+        .assert()
+        .success();
+
+    repo.git(["switch", "feature/a"]);
+    repo
+}
+
+#[test]
+fn list_all_shows_every_stack() {
+    let repo = two_stacks();
+
+    let output = repo
+        .stack()
+        .args(["list", "--all"])
+        .output()
+        .expect("list --all");
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    for needle in ["feature/a", "feature/x", "feature/y", "main (trunk)"] {
+        assert!(stdout.contains(needle), "missing {needle} in:\n{stdout}");
+    }
+    // The trunk appears once, at the bottom of its forest.
+    assert_eq!(stdout.matches("(trunk)").count(), 1);
+    // The branch we are on is marked wherever it appears.
+    assert!(
+        stdout.contains("\u{25c9} feature/a"),
+        "current marker:\n{stdout}"
+    );
+}
+
+#[test]
+fn list_without_all_shows_only_the_current_stack() {
+    let repo = two_stacks();
+
+    // Standing on the trunk-anchored stack, the rootless fragment is hidden.
+    repo.stack()
+        .arg("list")
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("feature/a"))
+        .stdout(predicates::str::contains("feature/x").not());
+}
+
+#[test]
+fn list_all_conflicts_with_format() {
+    let repo = two_stacks();
+
+    repo.stack()
+        .args(["list", "--all", "--format", "markdown"])
+        .assert()
+        .failure();
+}
