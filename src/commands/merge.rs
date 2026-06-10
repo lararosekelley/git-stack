@@ -256,13 +256,14 @@ fn merge_and_check(
     let output = match review_provider.merge_review(review, strategy, auto) {
         Ok(output) => output,
         Err(error) => {
-            // gh refuses outright when required checks are not green.
+            // gh refuses outright when required checks are not green. Surface
+            // a clean, actionable message instead of the raw gh error.
             let text = error.to_string().to_lowercase();
             if text.contains("status check") || text.contains("not mergeable") {
-                anstream::eprintln!(
-                    "{} required checks may not be green yet - rerun `git stk merge` \
-                     when they pass, or schedule with `git stk merge --auto`",
-                    style::hint_prefix()
+                bail!(
+                    "{}'s required checks are not green yet - wait and rerun \
+                     `git stk merge`, or schedule with `git stk merge --auto`",
+                    review.id
                 );
             }
             return Err(error);

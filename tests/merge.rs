@@ -1,6 +1,7 @@
 use std::fs;
 
 use common::{FakeProvider, TestRepo};
+use predicates::prelude::PredicateBooleanExt;
 
 mod common;
 
@@ -400,9 +401,11 @@ fn merge_hints_when_required_checks_block_it() {
         .assert()
         .failure()
         .stderr(predicates::str::contains(
-            "hint: required checks may not be green yet - rerun `git stk merge` \
-             when they pass, or schedule with `git stk merge --auto`",
-        ));
+            "#12's required checks are not green yet - wait and rerun \
+             `git stk merge`, or schedule with `git stk merge --auto`",
+        ))
+        // The raw gh/GraphQL error is not surfaced on top of the hint.
+        .stderr(predicates::str::contains("GraphQL").not());
 }
 
 #[test]
