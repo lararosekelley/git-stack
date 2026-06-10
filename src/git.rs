@@ -173,6 +173,67 @@ pub fn merge_base(a: &str, b: &str) -> Result<String> {
         .with_context(|| format!("failed to find merge base of {a} and {b}"))
 }
 
+/// A unified-0 diff against HEAD: just the staged changes when `cached`,
+/// otherwise all tracked changes (staged and unstaged). Zero context lines
+/// so each hunk's pre-image range pinpoints exactly the lines it touches.
+pub fn diff_against_head(cached: bool) -> Result<String> {
+    let mut args = vec!["diff", "--unified=0"];
+    if cached {
+        args.push("--cached");
+    }
+    args.push("HEAD");
+    output(&args).context("failed to diff against HEAD")
+}
+
+/// The distinct commits that last touched lines `start..start+len` of `file`
+/// in HEAD, newest blame wins per line. An empty range yields nothing.
+pub fn blame_line_shas(file: &str, start: usize, len: usize) -> Result<Vec<String>> {
+    if len == 0 {
+        return Ok(Vec::new());
+    }
+    let range = format!("{start},{}", start + len - 1);
+    let out = output(&[
+        "blame",
+        "HEAD",
+        "-L",
+        &range,
+        "--line-porcelain",
+        "--",
+        file,
+    ])
+    .with_context(|| format!("failed to blame {file}"))?;
+
+    let mut shas = Vec::new();
+    for line in out.lines() {
+        // Each porcelain block opens with "<40-hex sha> <orig> <final> ...";
+        // other fields (author, summary, "previous", the tab-led content) do
+        // not start with a bare 40-hex token.
+        let token = line.split(' ').next().unwrap_or_default();
+        if token.len() == 40
+            && token.bytes().all(|byte| byte.is_ascii_hexdigit())
+            && !shas.iter().any(|seen| seen == token)
+        {
+            shas.push(token.to_owned());
+        }
+    }
+    Ok(shas)
+}
+
+/// The commits in `range` (e.g. "main..HEAD"), newest first.
+pub fn rev_list(range: &str) -> Result<Vec<String>> {
+    Ok(output(&["rev-list", range])
+        .with_context(|| format!("failed to list commits in {range}"))?
+        .lines()
+        .map(str::to_owned)
+        .collect())
+}
+
+/// A commit's subject line.
+pub fn commit_subject(sha: &str) -> Result<String> {
+    output(&["show", "--no-patch", "--format=%s", sha])
+        .with_context(|| format!("failed to read subject of {sha}"))
+}
+
 pub fn is_ancestor(ancestor: &str, descendant: &str) -> Result<bool> {
     let output = Command::new("git")
         .args(["merge-base", "--is-ancestor", ancestor, descendant])

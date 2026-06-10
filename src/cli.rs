@@ -17,6 +17,7 @@ pub struct Cli {
 #[derive(Debug, Subcommand)]
 pub enum Command {
     New(commands::new::New),
+    Absorb(commands::absorb::Absorb),
     Parent(commands::parent::Parent),
     Children(commands::children::Children),
     Up(commands::up::Up),

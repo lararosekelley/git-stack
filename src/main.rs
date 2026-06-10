@@ -30,6 +30,7 @@ fn main() -> ExitCode {
 
     let result = match cli.command {
         Command::New(command) => command.run(),
+        Command::Absorb(command) => command.run(),
         Command::Parent(command) => command.run(),
         Command::Children(command) => command.run(),
         Command::Up(command) => command.run(),
