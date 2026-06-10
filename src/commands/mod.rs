@@ -8,6 +8,7 @@ pub trait Run {
     fn run(self) -> Result<()>;
 }
 
+pub mod absorb;
 pub mod adopt;
 pub mod bottom;
 pub mod children;

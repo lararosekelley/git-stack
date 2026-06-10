@@ -15,6 +15,7 @@ pub const MERGE_STRATEGY_KEY: &str = "stk.mergeStrategy";
 pub const MERGE_WAIT_KEY: &str = "stk.mergeWait";
 pub const SUBMIT_DRAFT_KEY: &str = "stk.submitDraft";
 pub const NO_UPDATE_CHECK_KEY: &str = "stk.noUpdateCheck";
+pub const ABSORB_INCLUDE_UNSTAGED_KEY: &str = "stk.absorbIncludeUnstaged";
 pub const DEFAULT_REMOTE: &str = "origin";
 
 /// Every `[stk]` setting the tool reads, with its default behavior. Shown by
@@ -30,6 +31,7 @@ pub const SETTINGS: &[(&str, &str)] = &[
     (MERGE_WAIT_KEY, "false"),
     (SUBMIT_DRAFT_KEY, "false"),
     (NO_UPDATE_CHECK_KEY, "false"),
+    (ABSORB_INCLUDE_UNSTAGED_KEY, "false"),
 ];
 
 /// The remote used for provider detection, trunk discovery, and pushes.
