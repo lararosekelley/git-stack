@@ -87,6 +87,40 @@ fn adopt_list_and_detach_manage_existing_branches() {
 }
 
 #[test]
+fn adopt_with_no_args_uses_current_branch_and_trunk() {
+    let repo = TestRepo::new();
+    // A branch made with raw git, switched to but not yet in a stack.
+    repo.git(["switch", "-c", "feature/x"]);
+
+    repo.stack()
+        .arg("adopt")
+        .assert()
+        .success()
+        .stdout("attached feature/x to main\n");
+
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/x.stkParent"]),
+        "main"
+    );
+}
+
+#[test]
+fn new_on_an_existing_branch_points_at_adopt() {
+    let repo = TestRepo::new();
+    repo.git(["switch", "-c", "feature/x"]);
+    repo.git(["switch", "main"]);
+
+    repo.stack()
+        .args(["new", "feature/x"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("already exists"))
+        .stderr(predicates::str::contains(
+            "git stk adopt feature/x --parent main",
+        ));
+}
+
+#[test]
 fn up_requires_branch_when_multiple_children_exist() {
     let repo = TestRepo::new();
 

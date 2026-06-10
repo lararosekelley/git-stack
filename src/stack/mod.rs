@@ -26,6 +26,16 @@ const BASE_KEY: &str = "stkBase";
 
 pub fn create_branch(branch: &str) -> Result<()> {
     let parent = git::current_branch()?;
+    // `new` creates the branch; an existing one is an adopt, not a create.
+    if git::local_branches()?
+        .iter()
+        .any(|existing| existing == branch)
+    {
+        bail!(
+            "branch {branch} already exists - adopt it onto {parent} \
+             with `git stk adopt {branch} --parent {parent}`"
+        );
+    }
     git::create_branch(branch)?;
     set_parent(branch, &parent)?;
     record_base(branch, &parent);
