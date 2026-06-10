@@ -109,7 +109,7 @@ git stk new <branch>
 git stk parent [branch]
 git stk children [branch]
 git stk list [--all | --format <markdown|plain>]
-git stk adopt <branch> --parent <parent>
+git stk adopt [branch] [--parent <parent>]   # defaults: current branch, trunk
 git stk detach [branch]
 git stk rename [branch] <new-name> [--dry-run]
 ```
