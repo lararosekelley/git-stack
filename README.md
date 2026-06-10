@@ -105,7 +105,7 @@ when the terminal supports it; pipes and [`NO_COLOR`](https://no-color.org/) tur
 Local stack metadata:
 
 ```sh
-git stk new <branch>
+git stk new <branch> [--insert | --prepend]
 git stk parent [branch]
 git stk children [branch]
 git stk list [--all | --format <markdown|plain>]
@@ -113,6 +113,11 @@ git stk adopt [branch] [--parent <parent>]   # defaults: current branch, trunk
 git stk detach [branch]
 git stk rename [branch] <new-name> [--dry-run]
 ```
+
+`new` normally stacks a fresh branch on top of where you stand. `--insert` splices it in *above* the
+current branch instead, moving the current branch's children onto it; `--prepend` splices it in *below*,
+moving the current branch onto it. The new branch is empty and shares its base's tip, so descendants stay
+correctly based - commit to it, then `restack` to replay them. `--prepend` needs a clean worktree.
 
 `rename` is `git branch -m` plus stack upkeep: children pointing at the old name are retargeted, and it
 warns when an open review still heads the old branch (platforms do not follow local renames).

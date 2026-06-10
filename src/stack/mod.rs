@@ -4,7 +4,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 
 use crate::git;
 use crate::settings;
@@ -44,6 +44,85 @@ pub fn create_branch(branch: &str) -> Result<()> {
         style::branch(branch),
         style::branch(&parent)
     );
+    Ok(())
+}
+
+/// Insert a new empty branch directly above the current one, moving the
+/// current branch's children onto it. The new branch shares the current tip,
+/// so descendants stay correctly based; commit to it, then `restack` to
+/// replay them. Any uncommitted changes ride onto the new branch, like `new`.
+pub fn insert_branch(branch: &str) -> Result<()> {
+    ensure_absent(branch)?;
+    let current = git::current_branch()?;
+    let children = children_of(&current)?;
+
+    snapshot::take("new --insert");
+    git::create_branch(branch)?; // off current; leaves us on the new branch
+    set_parent(branch, &current)?;
+    record_base(branch, &current);
+    for child in &children {
+        set_parent(child, branch)?;
+        record_base(child, branch);
+    }
+
+    anstream::println!(
+        "inserted {} above {}",
+        style::branch(branch),
+        style::branch(&current)
+    );
+    for child in &children {
+        anstream::println!(
+            "retargeted {} -> {}",
+            style::branch(child),
+            style::branch(branch)
+        );
+    }
+    Ok(())
+}
+
+/// Insert a new empty branch directly below the current one, moving the
+/// current branch onto it. Branches from the current branch's parent, so it
+/// requires a clean worktree. Commit to it, then `restack`.
+pub fn prepend_branch(branch: &str) -> Result<()> {
+    ensure_absent(branch)?;
+    let current = git::current_branch()?;
+    let parent =
+        parent_of(&current)?.context("current branch has no stack parent to prepend below")?;
+    if !git::worktree_is_clean()? {
+        bail!(
+            "working tree has uncommitted changes; commit or stash before `git stk new --prepend`"
+        );
+    }
+
+    snapshot::take("new --prepend");
+    git::checkout(&parent)?;
+    git::create_branch(branch)?; // off the parent; leaves us on the new branch
+    set_parent(branch, &parent)?;
+    record_base(branch, &parent);
+    set_parent(&current, branch)?;
+    record_base(&current, branch);
+
+    anstream::println!(
+        "inserted {} between {} and {}",
+        style::branch(branch),
+        style::branch(&parent),
+        style::branch(&current)
+    );
+    anstream::println!(
+        "retargeted {} -> {}",
+        style::branch(&current),
+        style::branch(branch)
+    );
+    Ok(())
+}
+
+fn ensure_absent(branch: &str) -> Result<()> {
+    if git::local_branches()?
+        .iter()
+        .any(|existing| existing == branch)
+    {
+        bail!("branch {branch} already exists");
+    }
     Ok(())
 }
 
