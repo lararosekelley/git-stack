@@ -29,13 +29,18 @@ const TOPICS: &[(&str, &str, Walk)] = &[
         "fold review fixes back into the commits they belong to",
         absorb,
     ),
+    (
+        "adopt",
+        "adopt a branch into a stack, or move it to a new parent",
+        adopt,
+    ),
 ];
 
 /// Walk the stacked workflow in a disposable sandbox repository.
 #[derive(Debug, clap::Args)]
 pub struct Guide {
     /// Which tour to run; omit for a menu.
-    #[arg(value_parser = clap::builder::PossibleValuesParser::new(["intro", "conflicts", "repair", "absorb"]))]
+    #[arg(value_parser = clap::builder::PossibleValuesParser::new(["intro", "conflicts", "repair", "absorb", "adopt"]))]
     topic: Option<String>,
 }
 
@@ -280,6 +285,53 @@ fn absorb(tour: &mut Tour) -> Result<()> {
     )?;
     tour.say("Hunks that cannot be attributed - brand-new lines, trunk-owned lines, a");
     tour.say("hunk spanning two commits - are left staged and reported, never guessed.");
+    tour.finish()
+}
+
+fn adopt(tour: &mut Tour) -> Result<()> {
+    tour.banner("1/3 - adopt a hand-made branch");
+    tour.say("Not every branch begins with `git stk new`. Suppose you branched off");
+    tour.say("the trunk by hand and did some work:");
+    tour.note("git switch -c feature/logging");
+    run_git(tour.sandbox, &["switch", "-c", "feature/logging"])?;
+    tour.commit("logging.txt", "structured logs\n", "add logging")?;
+    tour.say("git-stk has no metadata for it yet. `adopt` records its parent -");
+    tour.say("metadata only, nothing is rewritten - folding it into a stack:");
+    tour.stk(&["adopt", "--parent", "main"])?;
+    tour.stk(&["list"])?;
+    if tour.pause()?.stop() {
+        return Ok(());
+    }
+
+    tour.banner("2/3 - move a branch onto another");
+    tour.say("Two branches, each started independently off the trunk:");
+    tour.note("git switch main");
+    run_git(tour.sandbox, &["switch", "main"])?;
+    tour.stk(&["new", "feature/api"])?;
+    tour.commit("api.txt", "endpoints\n", "add api")?;
+    tour.note("git switch main");
+    run_git(tour.sandbox, &["switch", "main"])?;
+    tour.stk(&["new", "feature/web"])?;
+    tour.commit("web.txt", "pages\n", "add web")?;
+    tour.say("`list` shows them as siblings on the trunk:");
+    tour.stk(&["list", "--all"])?;
+    tour.say("But feature/web really belongs on top of feature/api. Re-point its");
+    tour.say("parent with `adopt`, then `restack` replays its commits onto the new");
+    tour.say("base (only its own commits move; the parent's are already there):");
+    tour.stk(&["adopt", "--parent", "feature/api"])?;
+    tour.stk(&["restack"])?;
+    tour.stk(&["list"])?;
+    if tour.pause()?.stop() {
+        return Ok(());
+    }
+
+    tour.banner("3/3 - detach: the inverse");
+    tour.say("`detach` drops a branch's stack metadata, leaving the branch and its");
+    tour.say("commits untouched - handy when something was adopted by mistake:");
+    tour.stk(&["detach", "feature/web"])?;
+    tour.stk(&["list", "--all"])?;
+    tour.say("feature/web still exists; git-stk just no longer tracks it. Re-`adopt`");
+    tour.say("it onto any parent whenever you want it back in a stack.");
     tour.finish()
 }
 
