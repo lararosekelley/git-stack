@@ -176,10 +176,8 @@ fn posix_shell_target() -> Option<(&'static str, PathBuf, &'static str)> {
     }
 }
 
-/// PowerShell's `$PROFILE`, when a PowerShell is on PATH. Asking the shell
-/// itself is the only reliable way to get the path - it differs between
-/// PowerShell 7 and Windows PowerShell 5.1, and Documents is often
-/// OneDrive-relocated.
+/// PowerShell's `$PROFILE` (when pwsh is on PATH). Ask the shell directly -
+/// the path differs across PowerShell 7 vs 5.1 and is often OneDrive-relocated.
 fn powershell_target() -> Option<(&'static str, PathBuf, &'static str)> {
     for exe in ["pwsh", "powershell"] {
         let Ok(output) = Command::new(exe)
