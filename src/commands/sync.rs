@@ -154,7 +154,7 @@ pub(crate) fn sync(dry_run: bool, push_mode: PushMode) -> Result<()> {
     //    merged branches and their reviews are still resolvable, so their
     //    entries get restyled rather than dropped.
     let branch_parents = stack::branch_parents(&branches)?;
-    crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run)?;
+    crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run, false)?;
 
     let survivors: Vec<String> = branches
         .iter()

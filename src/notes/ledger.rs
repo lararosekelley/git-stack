@@ -75,6 +75,7 @@ pub fn update_stack_notes(
     review_provider: &dyn ReviewProvider,
     branch_parents: &[(String, String)],
     dry_run: bool,
+    rebuild: bool,
 ) -> Result<()> {
     // The bottom branch's parent is the base the whole stack sits on.
     let Some(trunk) = branch_parents.first().map(|(_, parent)| parent.clone()) else {
@@ -99,7 +100,9 @@ pub fn update_stack_notes(
         }
     }
 
-    if dry_run {
+    // A normal dry run stays cheap (no body fetches); --rebuild-overview reads
+    // the bodies so it can report which drifted rows it would drop.
+    if dry_run && !rebuild {
         for review in &live {
             println!("would update stack note in {}", review.id);
         }
@@ -127,6 +130,7 @@ pub fn update_stack_notes(
 
     let live_entries: Vec<NoteEntry> = live.iter().map(NoteEntry::from_review).collect();
     let mut historical: Vec<NoteEntry> = Vec::new();
+    let mut dropped: Vec<NoteEntry> = Vec::new();
     for body in &bodies {
         let Some(section) = extract_section(body, STACK_SECTION) else {
             continue;
@@ -135,14 +139,35 @@ pub fn update_stack_notes(
             if superseded.iter().any(|stale| stale.matches(&entry)) {
                 continue;
             }
-            let known = live_entries.iter().chain(historical.iter());
-            if !known
-                .into_iter()
-                .any(|entry_known| entry_known.matches(&entry))
-            {
+            let known = live_entries
+                .iter()
+                .chain(historical.iter())
+                .chain(dropped.iter());
+            if known.into_iter().any(|seen| seen.matches(&entry)) {
+                continue;
+            }
+            // --rebuild-overview keeps only genuinely landed history; closed or
+            // orphaned rows that drifted in are dropped rather than carried on.
+            if rebuild && entry.state != "merged" {
+                dropped.push(entry);
+            } else {
                 historical.push(entry);
             }
         }
+    }
+
+    if dry_run {
+        for review in &live {
+            println!("would update stack note in {}", review.id);
+        }
+        for entry in &dropped {
+            println!(
+                "would drop drifted entry {} ({})",
+                if entry.id.is_empty() { "?" } else { &entry.id },
+                entry.state
+            );
+        }
+        return Ok(());
     }
 
     // Bottom-first, like the stack itself: already-landed history below,

@@ -51,6 +51,10 @@ pub struct Submit {
     /// Mark the submitted branches' existing draft reviews as ready.
     #[arg(long, action = ArgAction::SetTrue, conflicts_with = "draft")]
     ready: bool,
+    /// Rebuild each review's stack overview from the live stack plus merged
+    /// history, dropping closed or orphaned rows that drifted in. Stack mode.
+    #[arg(long, action = ArgAction::SetTrue)]
+    rebuild_overview: bool,
 }
 
 impl Run for Submit {
@@ -84,6 +88,7 @@ impl Run for Submit {
             self.desc.as_deref(),
             draft,
             self.ready,
+            self.rebuild_overview,
         )
     }
 }
@@ -98,6 +103,7 @@ pub fn submit(
     desc: Option<&str>,
     draft: bool,
     ready: bool,
+    rebuild_overview: bool,
 ) -> Result<()> {
     let branch = branch
         .map(str::to_owned)
@@ -202,7 +208,12 @@ pub fn submit(
     }
     crate::notes::update_closes_notes(review_provider.as_ref(), &branches, dry_run)?;
     if submit_stack || downstack {
-        crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run)?;
+        crate::notes::update_stack_notes(
+            review_provider.as_ref(),
+            &branch_parents,
+            dry_run,
+            rebuild_overview,
+        )?;
     }
 
     // The ledger has now pruned the superseded entries, so drop the markers.
