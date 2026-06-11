@@ -441,3 +441,89 @@ fn rename_then_submit_replaces_and_prunes_the_old_review() {
         "overview should drop the superseded review"
     );
 }
+
+/// The stored review body for demo review `id`, for asserting overview content.
+fn demo_review_body(repo: &TestRepo, id: u64) -> String {
+    let raw = std::fs::read_to_string(repo.path().join(".git/stk-demo-reviews"))
+        .expect("demo review state");
+    let state: serde_json::Value = serde_json::from_str(&raw).expect("parse demo state");
+    state["reviews"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|review| review["id"].as_u64() == Some(id))
+        .unwrap_or_else(|| panic!("review #{id}"))["body"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+#[test]
+fn rebuild_overview_drops_orphaned_rows_keeping_the_live_stack() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "add a");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "add b");
+    repo.stack().args(["submit", "--stack"]).assert().success();
+
+    // Drift the ledger like a pre-fix rename would: drop the marker so #2 is
+    // left orphaned in the overview instead of being closed and pruned.
+    repo.stack()
+        .args(["rename", "feature/b2"])
+        .assert()
+        .success();
+    repo.git(["config", "--unset", "branch.feature/b2.stkRenamedFrom"]);
+    repo.stack().args(["submit", "--stack"]).assert().success();
+
+    // Dry run reports the drifted row it would drop.
+    repo.stack()
+        .args(["submit", "--stack", "--rebuild-overview", "--dry-run"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("would drop drifted entry #2"));
+
+    repo.stack()
+        .args(["submit", "--stack", "--rebuild-overview"])
+        .assert()
+        .success();
+
+    // feature/a's overview now lists only the live stack, not the orphaned #2.
+    let body = demo_review_body(&repo, 1);
+    assert!(body.contains("demo://review/1"));
+    assert!(body.contains("demo://review/3"));
+    assert!(
+        !body.contains("demo://review/2"),
+        "rebuild should drop the orphaned entry"
+    );
+}
+
+#[test]
+fn rebuild_overview_keeps_merged_history() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "add a");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "add b");
+    repo.stack().args(["submit", "--stack"]).assert().success();
+
+    // Land feature/a so #1 becomes merged history and a leaves the stack.
+    repo.git(["switch", "feature/a"]);
+    repo.stack().args(["merge", "-y"]).assert().success();
+
+    // Rebuilding from the survivor keeps the merged #1 alongside the live #2.
+    repo.git(["switch", "feature/b"]);
+    repo.stack()
+        .args(["submit", "--stack", "--rebuild-overview"])
+        .assert()
+        .success();
+
+    let body = demo_review_body(&repo, 2);
+    assert!(
+        body.contains("demo://review/1"),
+        "rebuild should keep merged history"
+    );
+    assert!(body.contains("demo://review/2"));
+}

@@ -50,7 +50,7 @@ pub fn cleanup(branch: Option<&str>, dry_run: bool, keep_branch: bool) -> Result
     // reviews are still resolvable, so their entries get restyled rather
     // than dropped - mirroring sync.
     let branch_parents = stack::branch_parents(&branches)?;
-    crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run)?;
+    crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run, false)?;
 
     for branch in branches {
         retargeted +=

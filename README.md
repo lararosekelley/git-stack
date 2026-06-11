@@ -211,7 +211,7 @@ git stk sync [--dry-run] [--push | --no-push]
 git stk merge [-y] [--auto | --all [--wait | --no-wait]] [--dry-run]
 git stk repair [--dry-run]
 git stk submit [branch] [-d <desc>] [--draft | --no-draft] [--ready] [--dry-run] [--push | --no-push]
-git stk submit [--stack | --no-stack | --downstack] [-d <desc>] [--draft | --no-draft] [--ready] [--dry-run] [--push | --no-push]
+git stk submit [--stack | --no-stack | --downstack] [-d <desc>] [--draft | --no-draft] [--ready] [--rebuild-overview] [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--keep-branch]
 ```
 
@@ -260,6 +260,12 @@ crediting the tool. The overview is a ledger, not a snapshot: entries are styled
 their local branches are gone. `sync` (and therefore `merge`) and `cleanup` refresh the overview
 mid-loop, so the remaining PRs never show stale state. The section lives between HTML comment markers and self-repairs on
 the next update if the markup is hand-edited away.
+
+Because the ledger is append-only, a row that drifted in - a PR superseded outside the rename flow, a
+hand-edited body, an abandoned branch - lingers. `submit --stack --rebuild-overview` regenerates each
+overview from scratch: the live stack plus genuinely merged history, dropping closed or orphaned rows.
+Pair it with `--dry-run` to see which rows it would drop first. It is opt-in - the default submit keeps
+preserving history.
 
 `submit` also links issues from branch names: a branch like `123-fix-thing` or `fix/issue-123` gets a
 `Closes #123` line in its PR/MR description, so the platform closes the issue when the review merges. This
