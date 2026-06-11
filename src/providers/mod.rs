@@ -126,6 +126,10 @@ pub trait ReviewProvider {
     /// Mark a draft review as ready for review.
     fn mark_ready(&self, review: &ReviewRequest) -> Result<String>;
 
+    /// Close the review without merging, deleting its source branch when
+    /// `delete_branch`. Used to retire a review superseded by a branch rename.
+    fn close_review(&self, review: &ReviewRequest, delete_branch: bool) -> Result<String>;
+
     /// Open the review in the user's browser.
     fn open_review(&self, review: &ReviewRequest) -> Result<String>;
 }

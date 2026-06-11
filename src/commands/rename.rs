@@ -39,15 +39,21 @@ fn rename(old: &str, new: &str, dry_run: bool) -> Result<()> {
     stack::rename_branch(old, new, dry_run)?;
 
     // Best effort: an existing review still heads the old branch name, and
-    // the platform does not follow local renames.
+    // the platform does not follow local renames. Mark the rename so the next
+    // submit opens a fresh review for `new` and closes the stale one.
     if let Ok(provider) = detect_provider() {
         let review_provider = review_provider(provider.kind);
         if let Ok(Some(review)) = review_provider.review_for_branch(old)
             && review.branch == *old
         {
+            if !dry_run {
+                stack::set_renamed_from(new, old)?;
+            }
             anstream::println!(
-                "{} review {} still heads {old}; submitting {new} will open a new review",
+                "{} review {} still heads {old}; your next submit opens a fresh \
+                 review for {new} and closes {}",
                 style::paint(style::WARN, "warning:"),
+                review.id,
                 review.id
             );
         }

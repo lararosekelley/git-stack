@@ -114,6 +114,17 @@ pub fn update_stack_notes(
         bodies.push(review_provider.review_body(review)?);
     }
 
+    // Reviews left behind by a branch rename: a fresh replacement is among the
+    // live entries, so the stale row is dropped rather than carried forward.
+    let mut superseded: Vec<NoteEntry> = Vec::new();
+    for (branch, _) in branch_parents {
+        if let Some(old) = crate::stack::renamed_from(branch)?
+            && let Some(review) = review_provider.review_for_branch_including_closed(&old)?
+        {
+            superseded.push(NoteEntry::from_review(&review));
+        }
+    }
+
     let live_entries: Vec<NoteEntry> = live.iter().map(NoteEntry::from_review).collect();
     let mut historical: Vec<NoteEntry> = Vec::new();
     for body in &bodies {
@@ -121,6 +132,9 @@ pub fn update_stack_notes(
             continue;
         };
         for entry in parse_ledger(section) {
+            if superseded.iter().any(|stale| stale.matches(&entry)) {
+                continue;
+            }
             let known = live_entries.iter().chain(historical.iter());
             if !known
                 .into_iter()

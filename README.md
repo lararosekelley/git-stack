@@ -121,8 +121,10 @@ current branch instead, moving the current branch's children onto it; `--prepend
 moving the current branch onto it. The new branch is empty and shares its base's tip, so descendants stay
 correctly based - commit to it, then `restack` to replay them. `--prepend` needs a clean worktree.
 
-`rename` is `git branch -m` plus stack upkeep: children pointing at the old name are retargeted, and it
-warns when an open review still heads the old branch (platforms do not follow local renames).
+`rename` is `git branch -m` plus stack upkeep: children pointing at the old name are retargeted. When an
+open review still heads the old branch (platforms do not follow local renames), it records the rename so
+your next `submit` opens a fresh review for the new name, then offers to close the stale one and delete its
+branch - leaving no orphaned PR, and the stack overview in every review drops the superseded entry.
 
 `list` prints the stack leaf-first, like a pile sitting on its base, with the trunk labeled:
 

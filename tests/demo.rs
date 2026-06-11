@@ -346,3 +346,67 @@ fn guide_rejects_unknown_topics() {
         .stderr(predicates::str::contains("invalid value"))
         .stderr(predicates::str::contains("intro"));
 }
+
+#[test]
+fn rename_then_submit_replaces_and_prunes_the_old_review() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "add a");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "add b");
+    repo.stack().args(["submit", "--stack"]).assert().success();
+
+    // Rename the leaf; its open review (#2) still heads the old name, so the
+    // rename records the supersession for the next submit to resolve.
+    repo.stack()
+        .args(["rename", "feature/b2"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "opens a fresh review for feature/b2 and closes #2",
+        ));
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b2.stkRenamedFrom"]),
+        "feature/b"
+    );
+
+    // Resubmit opens a fresh review for feature/b2, then retires the stale #2.
+    repo.stack()
+        .args(["submit", "--stack"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("created feature/b2 -> feature/a"))
+        .stdout(predicates::str::contains(
+            "closed superseded review #2 for feature/b",
+        ));
+
+    // The marker is consumed once handled.
+    assert!(
+        repo.git_status(["config", "--get", "branch.feature/b2.stkRenamedFrom"])
+            .stdout
+            .is_empty()
+    );
+
+    // feature/a's overview now lists the replacement review, not the stale one.
+    let raw = std::fs::read_to_string(repo.path().join(".git/stk-demo-reviews"))
+        .expect("demo review state");
+    let state: serde_json::Value = serde_json::from_str(&raw).expect("parse demo state");
+    let body_a = state["reviews"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|review| review["id"] == 1)
+        .expect("review #1")["body"]
+        .as_str()
+        .unwrap();
+    assert!(
+        body_a.contains("demo://review/3"),
+        "overview should list the renamed branch's fresh review"
+    );
+    assert!(
+        !body_a.contains("demo://review/2"),
+        "overview should drop the superseded review"
+    );
+}

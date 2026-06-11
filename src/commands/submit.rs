@@ -182,6 +182,22 @@ pub fn submit(
         }
     }
 
+    // A renamed branch's fresh review now exists, so retire the review the old
+    // name still heads. Markers stay set until the ledger below prunes the
+    // superseded entries; then they are cleared.
+    let renamed: Vec<(String, String)> = branch_parents
+        .iter()
+        .filter_map(|(branch, _)| {
+            stack::renamed_from(branch)
+                .ok()
+                .flatten()
+                .map(|old| (branch.clone(), old))
+        })
+        .collect();
+    for (_, old) in &renamed {
+        close_superseded_review(review_provider.as_ref(), old, dry_run)?;
+    }
+
     // After every review exists, write the description, link any issue the
     // branch name references, then (in stack mode) write the stack overview
     // into each body.
@@ -198,6 +214,13 @@ pub fn submit(
         crate::notes::update_stack_notes(review_provider.as_ref(), &branch_parents, dry_run)?;
     }
 
+    // The ledger has now pruned the superseded entries, so drop the markers.
+    if !dry_run {
+        for (branch, _) in &renamed {
+            stack::clear_renamed_from(branch)?;
+        }
+    }
+
     anstream::println!(
         "{}",
         style::success(&format!(
@@ -205,6 +228,38 @@ pub fn submit(
             summary.created, summary.updated, summary.skipped
         ))
     );
+    Ok(())
+}
+
+/// Retire the open review still heading a renamed-away branch. The fresh
+/// review already exists, so closing here never leaves the work without one.
+/// Prompts (default yes; a non-interactive run proceeds) before closing.
+fn close_superseded_review(
+    review_provider: &dyn ReviewProvider,
+    old: &str,
+    dry_run: bool,
+) -> Result<()> {
+    let Some(review) = review_provider.review_for_branch(old)? else {
+        return Ok(());
+    };
+    if review.branch != *old {
+        return Ok(());
+    }
+
+    if dry_run {
+        println!("would close superseded review {} for {old}", review.id);
+        return Ok(());
+    }
+    if !crate::prompt::confirm_default_yes(&format!(
+        "close the replaced review {} for {old} and delete its branch? [Y/n] ",
+        review.id
+    ))? {
+        println!("kept review {} for {old}", review.id);
+        return Ok(());
+    }
+
+    review_provider.close_review(&review, true)?;
+    anstream::println!("closed superseded review {} for {old}", review.id);
     Ok(())
 }
 
