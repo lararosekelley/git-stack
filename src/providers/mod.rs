@@ -158,24 +158,33 @@ pub fn detect_provider() -> Result<DetectedProvider> {
     })
 }
 
-/// Recognize a host in a remote URL, in either `host:owner/repo` (SSH) or
-/// `host/owner/repo` (HTTPS) form. A configured `stk.gitlabHost` widens
-/// GitLab detection to a self-hosted instance.
+/// Detect the provider from a remote URL by its host. A configured
+/// `stk.gitlabHost` widens GitLab detection to a self-hosted instance.
 fn detect_provider_from_url(url: &str, gitlab_host: Option<&str>) -> Option<ProviderKind> {
     let normalized = url.to_ascii_lowercase();
-    let hosts = |host: &str| {
-        normalized.contains(&format!("{host}:")) || normalized.contains(&format!("{host}/"))
-    };
+    let host = host_of(&normalized);
+    // Match the host itself or a subdomain of it, never a look-alike that
+    // merely embeds the name (mygithub.com, evil.com/github.com/...).
+    let is = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
 
-    if hosts("github.com") {
+    if is("github.com") {
         Some(ProviderKind::GitHub)
-    } else if hosts("gitlab.com")
-        || gitlab_host.is_some_and(|host| hosts(&host.to_ascii_lowercase()))
-    {
+    } else if is("gitlab.com") || gitlab_host.is_some_and(|host| is(&host.to_ascii_lowercase())) {
         Some(ProviderKind::GitLab)
     } else {
         None
     }
+}
+
+/// The host of a git remote URL: the part after any `scheme://` and `user@`,
+/// up to the path, port, or scp-style `:`. Covers `https://host/owner/repo`,
+/// `ssh://git@host/owner/repo`, and scp-like `git@host:owner/repo`.
+fn host_of(url: &str) -> &str {
+    let after_scheme = url.split_once("://").map_or(url, |(_, rest)| rest);
+    let after_user = after_scheme
+        .split_once('@')
+        .map_or(after_scheme, |(_, rest)| rest);
+    after_user.split(['/', ':']).next().unwrap_or(after_user)
 }
 
 pub(crate) fn review_provider(kind: ProviderKind) -> Box<dyn ReviewProvider> {

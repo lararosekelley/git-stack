@@ -71,6 +71,25 @@ fn provider_detects_gitlab_ssh_remote() {
 }
 
 #[test]
+fn provider_does_not_match_lookalike_hosts() {
+    // A host that merely embeds github.com/gitlab.com in its name (or a path)
+    // must not be detected - only the real host or a subdomain of it.
+    for remote in [
+        "git@mygithub.com:org/repo.git",
+        "https://notgitlab.com/org/repo.git",
+        "https://evil.com/github.com/repo.git",
+    ] {
+        let repo = TestRepo::new();
+        repo.git(["remote", "add", "origin", remote]);
+        repo.stack()
+            .arg("provider")
+            .assert()
+            .failure()
+            .stderr(predicates::str::contains("could not detect provider"));
+    }
+}
+
+#[test]
 fn provider_detects_self_hosted_gitlab_via_config() {
     let repo = TestRepo::new();
     repo.git([
