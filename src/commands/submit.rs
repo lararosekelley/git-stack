@@ -110,19 +110,10 @@ pub fn submit(
         // work in progress that stays local.
         stack::path_from_root(&branch)?
     } else if submit_stack {
-        // The whole stack containing the current branch, from anywhere in it:
-        // walk to the root, then take its descendants. The root is excluded
-        // only when it is the trunk (the base everything sits on); an
-        // unanchored root stays in so validation can point at the missing
-        // parent instead of silently skipping it.
-        let root = stack::stack_root(&branch)?;
-        let trunk = stack::trunk_branch(&git::local_branches()?);
-        let full = stack::branch_and_descendants(&root)?;
-        if Some(root) == trunk {
-            full.into_iter().skip(1).collect()
-        } else {
-            full
-        }
+        // The stack containing the current branch: its own line, bottom
+        // through current and out to its descendants. Sibling stacks that
+        // merely share the trunk are left for their own submit.
+        stack::stack_line(&branch)?
     } else {
         vec![branch]
     };

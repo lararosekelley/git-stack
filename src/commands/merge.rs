@@ -109,14 +109,10 @@ fn merge_all(dry_run: bool, yes: bool, wait: bool) -> Result<()> {
     let review_provider = review_provider(provider.kind);
     let strategy = settings::merge_strategy()?;
 
-    // What is about to land, bottom-up, for the dry run and the prompt.
+    // What is about to land, bottom-up, for the dry run and the prompt: the
+    // current branch's own line, not sibling stacks sharing the trunk.
     let current = crate::git::current_branch()?;
-    let root = stack::stack_root(&current)?;
-    let trunk = stack::trunk_branch(&crate::git::local_branches()?);
-    let branches: Vec<String> = stack::branch_and_descendants(&root)?
-        .into_iter()
-        .filter(|branch| Some(branch) != trunk.as_ref())
-        .collect();
+    let branches = stack::stack_line(&current)?;
     let count = branches.len();
 
     if dry_run {
@@ -192,16 +188,11 @@ fn merge_all(dry_run: bool, yes: bool, wait: bool) -> Result<()> {
     Ok(())
 }
 
-/// The bottom of the stack containing the current branch: the first branch
-/// that is not the trunk. (A rootless fragment's own root is its bottom.)
+/// The bottom of the stack containing the current branch: the first branch on
+/// its line above the trunk. (A rootless fragment's own root is its bottom.)
 fn bottom_branch() -> Result<Option<String>> {
     let current = crate::git::current_branch()?;
-    let root = stack::stack_root(&current)?;
-    let trunk = stack::trunk_branch(&crate::git::local_branches()?);
-
-    Ok(stack::branch_and_descendants(&root)?
-        .into_iter()
-        .find(|branch| Some(branch) != trunk.as_ref()))
+    Ok(stack::stack_line(&current)?.into_iter().next())
 }
 
 /// The branch's review, validated as mergeable: it exists, is open, and

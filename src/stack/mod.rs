@@ -277,6 +277,23 @@ pub fn branch_and_descendants(branch: &str) -> Result<Vec<String>> {
     Ok(branches)
 }
 
+/// Every branch in the stack containing `branch`, parent-first: the line from
+/// the stack bottom up through `branch`, plus everything above it. Sibling
+/// stacks that share only the trunk are left out - they branch off the trunk
+/// separately, not through `branch`. The trunk itself is excluded; an
+/// unanchored root stays in (`path_from_root` keeps it).
+pub fn stack_line(branch: &str) -> Result<Vec<String>> {
+    let mut line = path_from_root(branch)?; // [bottom ..= branch]
+    let above = branch_and_descendants(branch)?; // [branch, ..descendants]
+    line.extend(above.into_iter().skip(1)); // append above-branch, dropping the duplicate
+
+    // `path_from_root` keeps its starting branch even when that is the trunk
+    // (you are standing on it); a trunk is never part of a stack.
+    let trunk = trunk_branch(&git::local_branches()?);
+    line.retain(|candidate| Some(candidate) != trunk.as_ref());
+    Ok(line)
+}
+
 /// The stack path from the bottom up to (and including) `branch`,
 /// parent-first; descendants above it are left out.
 pub fn path_from_root(branch: &str) -> Result<Vec<String>> {
