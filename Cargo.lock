@@ -558,6 +558,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "clap_mangen",
+ "console",
  "dialoguer",
  "predicates",
  "serde_json",

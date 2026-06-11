@@ -16,6 +16,7 @@ pub const MERGE_WAIT_KEY: &str = "stk.mergeWait";
 pub const SUBMIT_DRAFT_KEY: &str = "stk.submitDraft";
 pub const NO_UPDATE_CHECK_KEY: &str = "stk.noUpdateCheck";
 pub const ABSORB_INCLUDE_UNSTAGED_KEY: &str = "stk.absorbIncludeUnstaged";
+pub const GITLAB_HOST_KEY: &str = "stk.gitlabHost";
 pub const DEFAULT_REMOTE: &str = "origin";
 
 /// Every `[stk]` setting the tool reads, with its default behavior. Shown by
@@ -32,11 +33,19 @@ pub const SETTINGS: &[(&str, &str)] = &[
     (SUBMIT_DRAFT_KEY, "false"),
     (NO_UPDATE_CHECK_KEY, "false"),
     (ABSORB_INCLUDE_UNSTAGED_KEY, "false"),
+    (GITLAB_HOST_KEY, "gitlab.com"),
 ];
 
 /// The remote used for provider detection, trunk discovery, and pushes.
 pub fn remote() -> Result<String> {
     Ok(git::config_get(REMOTE_KEY)?.unwrap_or_else(|| DEFAULT_REMOTE.to_owned()))
+}
+
+/// A self-hosted GitLab host (e.g. `gitlab.example.com`) to recognize as
+/// GitLab alongside gitlab.com (`stk.gitlabHost`). `glab` reads the host from
+/// the git remote on its own, so this only widens stk's provider detection.
+pub fn gitlab_host() -> Result<Option<String>> {
+    git::config_get(GITLAB_HOST_KEY)
 }
 
 /// The merge strategy for `git stk merge`: squash, rebase, or merge.

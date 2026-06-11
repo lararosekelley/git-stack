@@ -71,6 +71,41 @@ fn provider_detects_gitlab_ssh_remote() {
 }
 
 #[test]
+fn provider_detects_self_hosted_gitlab_via_config() {
+    let repo = TestRepo::new();
+    repo.git([
+        "remote",
+        "add",
+        "origin",
+        "git@gitlab.example.com:team/git-stk.git",
+    ]);
+    repo.git(["config", "stk.gitlabHost", "gitlab.example.com"]);
+
+    repo.stack()
+        .arg("provider")
+        .assert()
+        .success()
+        .stdout("gitlab (remote origin (git@gitlab.example.com:team/git-stk.git))\n");
+}
+
+#[test]
+fn provider_self_hosted_gitlab_unset_does_not_detect() {
+    let repo = TestRepo::new();
+    repo.git([
+        "remote",
+        "add",
+        "origin",
+        "git@gitlab.example.com:team/git-stk.git",
+    ]);
+
+    repo.stack()
+        .arg("provider")
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("could not detect provider"));
+}
+
+#[test]
 fn provider_config_override_wins() {
     let repo = TestRepo::new();
     repo.git([

@@ -258,6 +258,12 @@ the next update if the markup is hand-edited away.
 `submit` also links issues from branch names: a branch like `123-fix-thing` or `fix/issue-123` gets a
 `Closes #123` line in its PR/MR description, so the platform closes the issue when the review merges.
 
+Tracking work in **Linear** or **Jira** instead? You do not need anything from stk: both vendors ship a
+GitHub/GitLab app that auto-links any branch or review whose name carries a ticket key
+(`eng-123-fix-thing`, `PROJ-456-thing`) and recognizes magic words (`Closes ENG-123`) in review bodies.
+Name your branches with the ticket key and the platform integration does the linking and closing; stk's
+own `Closes #N` step stays inert on those shapes, so the two never collide.
+
 `submit --desc <text>` (or `-d`) writes a description block at the top of the review body, above the
 managed sections, for the current or named branch only. It sticks across resubmits until changed;
 `--desc ""` removes it.
@@ -294,6 +300,9 @@ Everything is optional; defaults shown below:
     ; Review provider: github, gitlab, or demo (offline playground).
     ; Default: auto-detect from the remote URL.
     provider = github
+    ; Self-hosted GitLab host to detect as GitLab alongside gitlab.com.
+    ; `glab` picks up the host from the remote itself. Default: gitlab.com only.
+    gitlabHost = gitlab.example.com
     ; Remote used for provider detection and pushes. Default: origin.
     remote = origin
     ; Pass --update-refs to git rebase during restack. Default: false.
