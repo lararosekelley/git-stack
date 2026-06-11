@@ -237,10 +237,12 @@ are still queued (not yet registered) is waited out, not mistaken for "no checks
 timeout: the wait runs as long as the platform reports checks in progress, and ctrl-c is always safe
 (rerun to resume from the new bottom).
 
-`submit --stack` and `restack` operate on the whole stack containing the current branch - walk to the
-root, then every branch above it - so it never matters where in the stack you are standing. With
-`git config stk.submitStack true`, bare `submit` does this by default; `--no-stack` or naming a branch
-submits a single branch.
+`submit --stack` (and `merge --all`) operate on the stack containing the current branch - its line from
+the bottom up through the current branch and out to its descendants - so it never matters where in that
+stack you are standing, and independent stacks that only share the trunk are left for their own submit.
+With `git config stk.submitStack true`, bare `submit` does this by default; `--no-stack` or naming a branch
+submits a single branch. (`restack` still rebases the whole subtree on the trunk, since re-basing an
+already-current sibling is a harmless no-op.)
 
 `submit --downstack` submits the stack from its bottom through the current branch only, so
 work-in-progress branches above you stay local. `--draft` (or `git config stk.submitDraft true`) opens

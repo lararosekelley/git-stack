@@ -348,6 +348,37 @@ fn guide_rejects_unknown_topics() {
 }
 
 #[test]
+fn submit_stack_does_not_sweep_sibling_stacks_on_the_trunk() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+
+    // Two independent stacks rooted on the trunk.
+    repo.stack().args(["new", "feature/x"]).assert().success();
+    repo.commit_file("x.txt", "x\n", "add x");
+    repo.git(["switch", "main"]);
+    repo.stack().args(["new", "feature/y"]).assert().success();
+    repo.commit_file("y.txt", "y\n", "add y");
+
+    // Submitting feature/x's stack opens a review for it alone - feature/y is
+    // a separate stack that merely shares the trunk.
+    repo.git(["switch", "feature/x"]);
+    repo.stack()
+        .args(["submit", "--stack"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("created feature/x -> main"))
+        .stdout(predicates::str::contains("feature/y").not());
+
+    // feature/y still has no review until its own stack is submitted.
+    repo.git(["switch", "feature/y"]);
+    repo.stack()
+        .args(["submit", "--stack"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("created feature/y -> main"));
+}
+
+#[test]
 fn rename_then_submit_replaces_and_prunes_the_old_review() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "demo"]);
