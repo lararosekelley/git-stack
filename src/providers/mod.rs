@@ -147,7 +147,8 @@ pub fn detect_provider() -> Result<DetectedProvider> {
         bail!("could not detect provider: remote {remote:?} does not exist");
     };
 
-    let Some(kind) = detect_provider_from_url(&url) else {
+    let gitlab_host = settings::gitlab_host()?;
+    let Some(kind) = detect_provider_from_url(&url, gitlab_host.as_deref()) else {
         bail!("could not detect provider from remote {remote} ({url})");
     };
 
@@ -157,12 +158,20 @@ pub fn detect_provider() -> Result<DetectedProvider> {
     })
 }
 
-fn detect_provider_from_url(url: &str) -> Option<ProviderKind> {
+/// Recognize a host in a remote URL, in either `host:owner/repo` (SSH) or
+/// `host/owner/repo` (HTTPS) form. A configured `stk.gitlab.host` widens
+/// GitLab detection to a self-hosted instance.
+fn detect_provider_from_url(url: &str, gitlab_host: Option<&str>) -> Option<ProviderKind> {
     let normalized = url.to_ascii_lowercase();
+    let hosts = |host: &str| {
+        normalized.contains(&format!("{host}:")) || normalized.contains(&format!("{host}/"))
+    };
 
-    if normalized.contains("github.com:") || normalized.contains("github.com/") {
+    if hosts("github.com") {
         Some(ProviderKind::GitHub)
-    } else if normalized.contains("gitlab.com:") || normalized.contains("gitlab.com/") {
+    } else if hosts("gitlab.com")
+        || gitlab_host.is_some_and(|host| hosts(&host.to_ascii_lowercase()))
+    {
         Some(ProviderKind::GitLab)
     } else {
         None

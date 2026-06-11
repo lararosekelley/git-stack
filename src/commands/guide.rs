@@ -1,19 +1,22 @@
-use std::io::IsTerminal;
+use std::ffi::OsStr;
+use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Output, Stdio};
 use std::{env, fs};
 
+use anstyle::Style;
 use anyhow::{Context, Result, bail};
+use console::{Alignment, Key, Term, pad_str, truncate_str};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::{Confirm, Select};
 
 use crate::commands::Run;
 use crate::style;
 
-type Tour = fn(&Path) -> Result<()>;
+type Walk = fn(&mut Tour) -> Result<()>;
 
 /// The available tours: (topic, menu description, runner).
-const TOPICS: &[(&str, &str, Tour)] = &[
+const TOPICS: &[(&str, &str, Walk)] = &[
     ("intro", "create, submit, restack, and land a stack", intro),
     (
         "conflicts",
@@ -51,6 +54,8 @@ fn guide(topic: Option<&str>) -> Result<()> {
     say("Short interactive tours. Everything happens in a disposable sandbox");
     say("repository - your real work is never touched, and a built-in demo");
     say("provider stands in for GitHub: same commands, no network.");
+    say("Each step opens full-screen; scroll with j/k or the arrows, Enter to");
+    say("move on, q to quit.");
     println!();
 
     let chosen = match topic {
@@ -82,8 +87,8 @@ fn guide(topic: Option<&str>) -> Result<()> {
     println!();
     setup_sandbox(&sandbox)?;
 
-    let finished = (chosen.2)(&sandbox);
-    println!();
+    let mut tour = Tour::new(&sandbox, chosen.0);
+    let finished = (chosen.2)(&mut tour);
 
     // Hand the sandbox over or clean it up, whether or not the tour ran dry.
     let delete = Confirm::with_theme(&ColorfulTheme::default())
@@ -102,282 +107,420 @@ fn guide(topic: Option<&str>) -> Result<()> {
     finished
 }
 
-fn intro(sandbox: &Path) -> Result<()> {
-    banner("1/5 - a stack is just branches");
-    say("Each branch carries one reviewable change and knows its parent.");
-    say("`new` creates a child of wherever you stand:");
-    run_stk(sandbox, &["new", "feature/login"])?;
-    commit(
-        sandbox,
-        "login.txt",
-        "username + password form\n",
-        "add login form",
-    )?;
-    run_stk(sandbox, &["new", "feature/avatar"])?;
-    commit(sandbox, "avatar.txt", "round avatars\n", "add avatars")?;
-    say("Two branches, stacked. `list` draws the pile, trunk at the bottom:");
-    run_stk(sandbox, &["list"])?;
-    if !proceed()? {
+fn intro(tour: &mut Tour) -> Result<()> {
+    tour.banner("1/5 - a stack is just branches");
+    tour.say("Each branch carries one reviewable change and knows its parent.");
+    tour.say("`new` creates a child of wherever you stand:");
+    tour.stk(&["new", "feature/login"])?;
+    tour.commit("login.txt", "username + password form\n", "add login form")?;
+    tour.stk(&["new", "feature/avatar"])?;
+    tour.commit("avatar.txt", "round avatars\n", "add avatars")?;
+    tour.say("Two branches, stacked. `list` draws the pile, trunk at the bottom:");
+    tour.stk(&["list"])?;
+    if tour.pause()?.stop() {
         return Ok(());
     }
 
-    banner("2/5 - submit the whole stack");
-    say("One command opens (or updates) a review per branch, parent-first,");
-    say("and writes a live stack overview into every description:");
-    run_stk(sandbox, &["submit", "--stack"])?;
-    run_stk(sandbox, &["status"])?;
-    if !proceed()? {
+    tour.banner("2/5 - submit the whole stack");
+    tour.say("One command opens (or updates) a review per branch, parent-first,");
+    tour.say("and writes a live stack overview into every description:");
+    tour.stk(&["submit", "--stack"])?;
+    tour.stk(&["status"])?;
+    if tour.pause()?.stop() {
         return Ok(());
     }
 
-    banner("3/5 - parents move; restack follows");
-    say("Review feedback lands on the bottom branch:");
-    run_stk(sandbox, &["down"])?;
-    commit(
-        sandbox,
+    tour.banner("3/5 - parents move; restack follows");
+    tour.say("Review feedback lands on the bottom branch:");
+    tour.stk(&["down"])?;
+    tour.commit(
         "login.txt",
         "username + password form\nremember me\n",
         "add remember me",
     )?;
-    say("The child is now behind its parent - `list` notices:");
-    run_stk(sandbox, &["list"])?;
-    say("`restack` rebases every descendant back onto its parent:");
-    run_stk(sandbox, &["restack"])?;
-    run_stk(sandbox, &["top"])?;
-    if !proceed()? {
+    tour.say("The child is now behind its parent - `list` notices:");
+    tour.stk(&["list"])?;
+    tour.say("`restack` rebases every descendant back onto its parent:");
+    tour.stk(&["restack"])?;
+    tour.stk(&["top"])?;
+    if tour.pause()?.stop() {
         return Ok(());
     }
 
-    banner("4/5 - land the stack");
-    say("`merge --all` repeats merge-bottom-then-sync until the stack is");
-    say("complete: children retarget, merged branches vanish, the overview");
-    say("in every review restyles as history accumulates:");
-    run_stk(sandbox, &["merge", "--all", "-y"])?;
-    if !proceed()? {
+    tour.banner("4/5 - land the stack");
+    tour.say("`merge --all` repeats merge-bottom-then-sync until the stack is");
+    tour.say("complete: children retarget, merged branches vanish, the overview");
+    tour.say("in every review restyles as history accumulates:");
+    tour.stk(&["merge", "--all", "-y"])?;
+    if tour.pause()?.stop() {
         return Ok(());
     }
 
-    banner("5/5 - nothing left but trunk");
-    run_stk(sandbox, &["list"])?;
-    say("That is the whole loop: new -> commit -> submit -> merge.");
-    say("On a real repo the provider is detected from your remote; day to day");
-    say("you mostly run `git stk new`, `git stk submit --stack`, and");
-    say("`git stk merge --all`. `git stk status` and the hints fill the gaps.");
-    Ok(())
+    tour.banner("5/5 - nothing left but trunk");
+    tour.stk(&["list"])?;
+    tour.say("That is the whole loop: new -> commit -> submit -> merge.");
+    tour.say("On a real repo the provider is detected from your remote; day to day");
+    tour.say("you mostly run `git stk new`, `git stk submit --stack`, and");
+    tour.say("`git stk merge --all`. `git stk status` and the hints fill the gaps.");
+    tour.finish()
 }
 
-fn conflicts(sandbox: &Path) -> Result<()> {
-    banner("1/3 - set up a collision");
-    say("A two-branch stack where both branches touch the same line:");
-    run_stk(sandbox, &["new", "feature/payment"])?;
-    commit(
-        sandbox,
-        "notes.txt",
-        "use stripe\n",
-        "choose payment provider",
-    )?;
-    run_stk(sandbox, &["new", "feature/receipts"])?;
-    commit(
-        sandbox,
-        "notes.txt",
-        "use stripe with receipts\n",
-        "email receipts",
-    )?;
-    say("Now the parent changes its mind about that very line:");
-    run_stk(sandbox, &["down"])?;
-    commit(sandbox, "notes.txt", "use paypal\n", "switch to paypal")?;
-    if !proceed()? {
+fn conflicts(tour: &mut Tour) -> Result<()> {
+    tour.banner("1/3 - set up a collision");
+    tour.say("A two-branch stack where both branches touch the same line:");
+    tour.stk(&["new", "feature/payment"])?;
+    tour.commit("notes.txt", "use stripe\n", "choose payment provider")?;
+    tour.stk(&["new", "feature/receipts"])?;
+    tour.commit("notes.txt", "use stripe with receipts\n", "email receipts")?;
+    tour.say("Now the parent changes its mind about that very line:");
+    tour.stk(&["down"])?;
+    tour.commit("notes.txt", "use paypal\n", "switch to paypal")?;
+    if tour.pause()?.stop() {
         return Ok(());
     }
 
-    banner("2/3 - the restack stops, with context");
-    say("Replaying the child onto the rewritten parent cannot succeed; the");
-    say("restack stops, shows git's conflict output, and says what to do:");
-    run_stk_failing(sandbox, &["restack"])?;
-    if !proceed()? {
+    tour.banner("2/3 - the restack stops, with context");
+    tour.say("Replaying the child onto the rewritten parent cannot succeed; the");
+    tour.say("restack stops, shows git's conflict output, and says what to do:");
+    tour.stk_fails(&["restack"])?;
+    if tour.pause()?.stop() {
         return Ok(());
     }
 
-    banner("3/3 - resolve, then continue");
-    say("Fix the file and stage it, exactly like any rebase conflict:");
-    resolve(sandbox, "notes.txt", "use paypal with receipts\n")?;
-    say("`continue` picks the restack back up where it stopped");
-    say("(`git stk abort` would have unwound it instead):");
-    run_stk(sandbox, &["continue"])?;
-    run_stk(sandbox, &["list"])?;
-    say("Conflicts interrupt the restack, never break it: resolve, continue,");
-    say("and the rest of the stack follows.");
-    Ok(())
+    tour.banner("3/3 - resolve, then continue");
+    tour.say("Fix the file and stage it, exactly like any rebase conflict:");
+    tour.edit_and_add("notes.txt", "use paypal with receipts\n")?;
+    tour.say("`continue` picks the restack back up where it stopped");
+    tour.say("(`git stk abort` would have unwound it instead):");
+    tour.stk(&["continue"])?;
+    tour.stk(&["list"])?;
+    tour.say("Conflicts interrupt the restack, never break it: resolve, continue,");
+    tour.say("and the rest of the stack follows.");
+    tour.finish()
 }
 
-fn repair(sandbox: &Path) -> Result<()> {
-    banner("1/3 - a healthy stack");
-    run_stk(sandbox, &["new", "feature/api"])?;
-    commit(sandbox, "api.txt", "endpoints\n", "add api")?;
-    run_stk(sandbox, &["new", "feature/ui"])?;
-    commit(sandbox, "ui.txt", "buttons\n", "add ui")?;
-    run_stk(sandbox, &["submit", "--stack"])?;
-    if !proceed()? {
+fn repair(tour: &mut Tour) -> Result<()> {
+    tour.banner("1/3 - a healthy stack");
+    tour.stk(&["new", "feature/api"])?;
+    tour.commit("api.txt", "endpoints\n", "add api")?;
+    tour.stk(&["new", "feature/ui"])?;
+    tour.commit("ui.txt", "buttons\n", "add ui")?;
+    tour.stk(&["submit", "--stack"])?;
+    if tour.pause()?.stop() {
         return Ok(());
     }
 
-    banner("2/3 - the metadata vanishes");
-    say("Stack parents are plain `branch.<name>.stkParent` entries in");
-    say(".git/config - annotations, not state. Suppose one gets lost:");
-    shell_step("git config --unset branch.feature/ui.stkParent");
-    git(
-        sandbox,
+    tour.banner("2/3 - the metadata vanishes");
+    tour.say("Stack parents are plain `branch.<name>.stkParent` entries in");
+    tour.say(".git/config - annotations, not state. Suppose one gets lost:");
+    tour.note("git config --unset branch.feature/ui.stkParent");
+    run_git(
+        tour.sandbox,
         &["config", "--unset", "branch.feature/ui.stkParent"],
     )?;
-    say("The stack no longer knows feature/ui belongs to it:");
-    run_stk(sandbox, &["list"])?;
-    if !proceed()? {
+    tour.say("The stack no longer knows feature/ui belongs to it:");
+    tour.stk(&["list"])?;
+    if tour.pause()?.stop() {
         return Ok(());
     }
 
-    banner("3/3 - repair rebuilds it");
-    say("`repair` re-derives parents from review bases (when a provider is");
-    say("reachable) and branch ancestry, and verifies recorded fork points:");
-    run_stk(sandbox, &["repair", "--dry-run"])?;
-    run_stk(sandbox, &["repair"])?;
-    run_stk(sandbox, &["list"])?;
-    say("Branches are the real state; metadata is always recoverable.");
-    say("Anything repair cannot resolve safely, it reports for a manual");
-    say("`git stk adopt`.");
-    Ok(())
+    tour.banner("3/3 - repair rebuilds it");
+    tour.say("`repair` re-derives parents from review bases (when a provider is");
+    tour.say("reachable) and branch ancestry, and verifies recorded fork points:");
+    tour.stk(&["repair", "--dry-run"])?;
+    tour.stk(&["repair"])?;
+    tour.stk(&["list"])?;
+    tour.say("Branches are the real state; metadata is always recoverable.");
+    tour.say("Anything repair cannot resolve safely, it reports for a manual");
+    tour.say("`git stk adopt`.");
+    tour.finish()
 }
 
-fn absorb(sandbox: &Path) -> Result<()> {
-    banner("1/3 - fixes scattered across the stack");
-    say("A two-branch stack, each branch owning one file:");
-    run_stk(sandbox, &["new", "feature/login"])?;
-    commit(
-        sandbox,
-        "login.txt",
-        "username + password form\n",
-        "add login form",
-    )?;
-    run_stk(sandbox, &["new", "feature/avatar"])?;
-    commit(sandbox, "avatar.txt", "round avatars\n", "add avatars")?;
-    say("Review comes back: two small fixes, one on each branch's file.");
-    say("You make both edits from the top and stage them, as usual:");
-    stage_fix(sandbox, "login.txt", "username + password form, with 2FA\n")?;
-    stage_fix(sandbox, "avatar.txt", "round avatars, lazy-loaded\n")?;
-    say("Both fixes sit staged together, but each belongs to a different commit");
-    say("further down the stack:");
-    run_stk(sandbox, &["status"])?;
-    if !proceed()? {
+fn absorb(tour: &mut Tour) -> Result<()> {
+    tour.banner("1/3 - fixes scattered across the stack");
+    tour.say("A two-branch stack, each branch owning one file:");
+    tour.stk(&["new", "feature/login"])?;
+    tour.commit("login.txt", "username + password form\n", "add login form")?;
+    tour.stk(&["new", "feature/avatar"])?;
+    tour.commit("avatar.txt", "round avatars\n", "add avatars")?;
+    tour.say("Review comes back: two small fixes, one on each branch's file.");
+    tour.say("You make both edits from the top and stage them, as usual:");
+    tour.edit_and_add("login.txt", "username + password form, with 2FA\n")?;
+    tour.edit_and_add("avatar.txt", "round avatars, lazy-loaded\n")?;
+    tour.say("Both fixes sit staged together, but each belongs to a different commit");
+    tour.say("further down the stack:");
+    tour.stk(&["status"])?;
+    if tour.pause()?.stop() {
         return Ok(());
     }
 
-    banner("2/3 - preview where each hunk lands");
-    say("`absorb` blames every staged hunk and routes it to the commit that");
-    say("introduced the lines it touches. `--dry-run` shows the plan first:");
-    run_stk(sandbox, &["absorb", "--dry-run"])?;
-    if !proceed()? {
+    tour.banner("2/3 - preview where each hunk lands");
+    tour.say("`absorb` blames every staged hunk and routes it to the commit that");
+    tour.say("introduced the lines it touches. `--dry-run` shows the plan first:");
+    tour.stk(&["absorb", "--dry-run"])?;
+    if tour.pause()?.stop() {
         return Ok(());
     }
 
-    banner("3/3 - fold them in");
-    say("Run it for real: each fix becomes a `fixup!` of its owning commit, an");
-    say("autosquash rebase folds them in, and every branch ref rides along:");
-    run_stk(sandbox, &["absorb"])?;
-    say("The history reads as if the fixes were always there - no extra commits:");
-    shell_step("git log --oneline main..feature/avatar");
-    git(
-        sandbox,
-        &["--no-pager", "log", "--oneline", "main..feature/avatar"],
+    tour.banner("3/3 - fold them in");
+    tour.say("Run it for real: each fix becomes a `fixup!` of its owning commit, an");
+    tour.say("autosquash rebase folds them in, and every branch ref rides along:");
+    tour.stk(&["absorb"])?;
+    tour.say("The history reads as if the fixes were always there - no extra commits:");
+    tour.show_git(
+        "git log --oneline main..feature/avatar",
+        &[
+            "--no-pager",
+            "-c",
+            "color.ui=always",
+            "log",
+            "--oneline",
+            "main..feature/avatar",
+        ],
     )?;
-    println!();
-    say("Hunks that cannot be attributed - brand-new lines, trunk-owned lines, a");
-    say("hunk spanning two commits - are left staged and reported, never guessed.");
-    Ok(())
+    tour.say("Hunks that cannot be attributed - brand-new lines, trunk-owned lines, a");
+    tour.say("hunk spanning two commits - are left staged and reported, never guessed.");
+    tour.finish()
+}
+
+/// One full-screen step: a pinned title, a scrollable body of narration and
+/// captured command output, and a footer of scroll hints. The tour functions
+/// build a screen with `banner`/`say`/`stk`/..., then `pause` (or `finish`)
+/// renders it and waits for the reader.
+struct Tour<'a> {
+    sandbox: &'a Path,
+    topic: &'a str,
+    term: Term,
+    title: String,
+    lines: Vec<String>,
+}
+
+/// What the reader chose at a `pause`: move on, or quit the tour.
+enum Flow {
+    Continue,
+    Stop,
+}
+
+impl Flow {
+    fn stop(&self) -> bool {
+        matches!(self, Self::Stop)
+    }
+}
+
+impl<'a> Tour<'a> {
+    fn new(sandbox: &'a Path, topic: &'a str) -> Self {
+        Self {
+            sandbox,
+            topic,
+            term: Term::stdout(),
+            title: String::new(),
+            lines: Vec::new(),
+        }
+    }
+
+    /// Start a fresh screen with `title`. Does not render: content accrues
+    /// until the next `pause`/`finish`.
+    fn banner(&mut self, title: &str) {
+        self.title = title.to_owned();
+        self.lines.clear();
+    }
+
+    /// A line of narration.
+    fn say(&mut self, line: &str) {
+        self.lines.push(style::dim(line));
+    }
+
+    /// A shell-prompt line for a step we narrate but do not capture output
+    /// from (e.g. a manual `git config --unset`).
+    fn note(&mut self, command: &str) {
+        self.lines.push(format!("{} {command}", style::dim("$")));
+    }
+
+    /// Run `git stk <args>` in the sandbox, showing the command and its
+    /// output. Fails if the command does.
+    fn stk(&mut self, args: &[&str]) -> Result<()> {
+        let output = self.run_stk(args)?;
+        if !output.status.success() {
+            bail!("`git stk {}` failed in the sandbox", args.join(" "));
+        }
+        Ok(())
+    }
+
+    /// Like `stk`, for the step that is supposed to stop (the conflict).
+    fn stk_fails(&mut self, args: &[&str]) -> Result<()> {
+        let output = self.run_stk(args)?;
+        if output.status.success() {
+            bail!(
+                "`git stk {}` was expected to stop on the conflict",
+                args.join(" ")
+            );
+        }
+        Ok(())
+    }
+
+    fn run_stk(&mut self, args: &[&str]) -> Result<Output> {
+        self.note(&format!("git stk {}", args.join(" ")));
+        let binary = env::current_exe().context("failed to locate the running binary")?;
+        let output = capture(self.sandbox, &binary, args)?;
+        self.absorb_output(&output);
+        Ok(output)
+    }
+
+    /// Run a raw `git` command and show it under `display` with its output.
+    fn show_git(&mut self, display: &str, args: &[&str]) -> Result<()> {
+        self.note(display);
+        let output = capture(self.sandbox, OsStr::new("git"), args)?;
+        self.absorb_output(&output);
+        if !output.status.success() {
+            bail!("`{display}` failed in the sandbox");
+        }
+        Ok(())
+    }
+
+    /// Write `contents` to `file` and commit it, narrating the edit.
+    fn commit(&mut self, file: &str, contents: &str, message: &str) -> Result<()> {
+        self.note(&format!("edit {file}, then git commit -m {message:?}"));
+        fs::write(self.sandbox.join(file), contents).context("failed to write sandbox file")?;
+        run_git(self.sandbox, &["add", file])?;
+        run_git(self.sandbox, &["commit", "-q", "-m", message])
+    }
+
+    /// Write `contents` to `file` and stage it without committing - a review
+    /// fix, or a resolved conflict.
+    fn edit_and_add(&mut self, file: &str, contents: &str) -> Result<()> {
+        self.note(&format!("edit {file}, then git add {file}"));
+        fs::write(self.sandbox.join(file), contents).context("failed to write sandbox file")?;
+        run_git(self.sandbox, &["add", file])
+    }
+
+    /// Append a captured command's output, then a blank separator line.
+    fn absorb_output(&mut self, output: &Output) {
+        for stream in [&output.stdout, &output.stderr] {
+            let text = String::from_utf8_lossy(stream);
+            let text = text.trim_end_matches(['\n', '\r']);
+            if text.is_empty() {
+                continue;
+            }
+            for line in text.split('\n') {
+                self.lines.push(line.trim_end_matches('\r').to_owned());
+            }
+        }
+        self.lines.push(String::new());
+    }
+
+    /// Render the current screen and wait for the reader to move on or quit.
+    fn pause(&mut self) -> Result<Flow> {
+        self.present("j/k/up/down scroll - space/pgdn page - enter continue - q quit")
+    }
+
+    /// Render the final screen; enter or q both end the tour.
+    fn finish(&mut self) -> Result<()> {
+        self.present("j/k/up/down scroll - enter/q to finish")?;
+        Ok(())
+    }
+
+    /// The pager: draw the framed screen and scroll it until the reader
+    /// presses enter (continue) or q/esc (stop).
+    fn present(&mut self, hint: &str) -> Result<Flow> {
+        self.term.hide_cursor().ok();
+        self.term.clear_screen().ok();
+
+        let mut scroll = 0usize;
+        let flow = loop {
+            let (rows, cols) = self.term.size();
+            let (rows, cols) = (rows as usize, cols as usize);
+            let body = rows.saturating_sub(2).max(1);
+            let max_scroll = self.lines.len().saturating_sub(body);
+            scroll = scroll.min(max_scroll);
+            self.draw(scroll, cols, body, hint)?;
+
+            match self.term.read_key() {
+                Ok(Key::ArrowDown | Key::Char('j')) => scroll = (scroll + 1).min(max_scroll),
+                Ok(Key::ArrowUp | Key::Char('k')) => scroll = scroll.saturating_sub(1),
+                Ok(Key::PageDown | Key::Char(' ')) => scroll = (scroll + body).min(max_scroll),
+                Ok(Key::PageUp) => scroll = scroll.saturating_sub(body),
+                Ok(Key::Home | Key::Char('g')) => scroll = 0,
+                Ok(Key::End | Key::Char('G')) => scroll = max_scroll,
+                Ok(Key::Enter) => break Flow::Continue,
+                Ok(Key::Char('q') | Key::Escape | Key::CtrlC) => break Flow::Stop,
+                Ok(_) => {}
+                Err(_) => break Flow::Stop,
+            }
+        };
+
+        self.term.show_cursor().ok();
+        self.term.clear_screen().ok();
+        Ok(flow)
+    }
+
+    /// Compose and paint one frame: header bar, `body` rows of content from
+    /// `scroll`, and a footer bar. Every row is exactly `cols` wide so each
+    /// frame fully overwrites the last.
+    fn draw(&self, scroll: usize, cols: usize, body: usize, hint: &str) -> Result<()> {
+        let bar = Style::new().invert();
+        let header = format!("{} - {}", self.topic, self.title);
+        let mut frame = style::paint(bar, &fit(&format!(" {header}"), cols));
+
+        for row in 0..body {
+            frame.push('\n');
+            let line = self.lines.get(scroll + row).map_or("", String::as_str);
+            frame.push_str(&fit(line, cols));
+        }
+
+        let scrollable = self.lines.len() > body;
+        let footer = if scrollable {
+            format!(
+                " {hint}   [{}/{}]",
+                (scroll + body).min(self.lines.len()),
+                self.lines.len()
+            )
+        } else {
+            format!(" {hint}")
+        };
+        frame.push('\n');
+        frame.push_str(&style::paint(bar, &fit(&footer, cols)));
+
+        self.term.move_cursor_to(0, 0)?;
+        print!("{frame}");
+        std::io::stdout()
+            .flush()
+            .context("failed to draw the guide")?;
+        Ok(())
+    }
+}
+
+/// Truncate (ANSI-aware) to `width`, then pad with spaces to exactly `width`.
+fn fit(line: &str, width: usize) -> String {
+    let truncated = truncate_str(line, width, "…");
+    pad_str(&truncated, width, Alignment::Left, None).into_owned()
 }
 
 fn setup_sandbox(sandbox: &Path) -> Result<()> {
     fs::create_dir_all(sandbox).context("failed to create the sandbox")?;
-    git(sandbox, &["init", "-q", "-b", "main"])?;
-    git(sandbox, &["config", "user.email", "guide@git-stk.dev"])?;
-    git(sandbox, &["config", "user.name", "git-stk guide"])?;
-    git(sandbox, &["config", "stk.provider", "demo"])?;
-    git(sandbox, &["config", "stk.noUpdateCheck", "true"])?;
+    run_git(sandbox, &["init", "-q", "-b", "main"])?;
+    run_git(sandbox, &["config", "user.email", "guide@git-stk.dev"])?;
+    run_git(sandbox, &["config", "user.name", "git-stk guide"])?;
+    run_git(sandbox, &["config", "stk.provider", "demo"])?;
+    run_git(sandbox, &["config", "stk.noUpdateCheck", "true"])?;
     fs::write(sandbox.join("README.md"), "# guide sandbox\n").context("failed to seed sandbox")?;
-    git(sandbox, &["add", "README.md"])?;
-    git(sandbox, &["commit", "-q", "-m", "initial commit"])?;
+    run_git(sandbox, &["add", "README.md"])?;
+    run_git(sandbox, &["commit", "-q", "-m", "initial commit"])?;
     Ok(())
 }
 
-/// Run the tool itself inside the sandbox, narrating the invocation. The
-/// child inherits the terminal so its colors come through.
-fn run_stk(sandbox: &Path, args: &[&str]) -> Result<()> {
-    anstream::println!(
-        "{} {}",
-        style::paint(style::DIM, "$ git stk"),
-        args.join(" ")
-    );
-    let binary = env::current_exe().context("failed to locate the running binary")?;
-    let status = isolated(Command::new(binary).args(args).current_dir(sandbox))
-        .status()
-        .context("failed to run git-stk in the sandbox")?;
-    if !status.success() {
-        bail!("`git stk {}` failed in the sandbox", args.join(" "));
-    }
-    println!();
-    Ok(())
+/// Run a command in the sandbox and capture its output, forcing color on so
+/// the captured lines look like a real terminal session.
+fn capture(sandbox: &Path, program: impl AsRef<OsStr>, args: &[&str]) -> Result<Output> {
+    let program = program.as_ref();
+    isolated(Command::new(program).args(args).current_dir(sandbox))
+        .env("CLICOLOR_FORCE", "1")
+        .stdin(Stdio::null())
+        .output()
+        .with_context(|| format!("failed to run {} in the sandbox", program.to_string_lossy()))
 }
 
-/// Like [`run_stk`], for the step that is supposed to stop (the conflict).
-fn run_stk_failing(sandbox: &Path, args: &[&str]) -> Result<()> {
-    anstream::println!(
-        "{} {}",
-        style::paint(style::DIM, "$ git stk"),
-        args.join(" ")
-    );
-    let binary = env::current_exe().context("failed to locate the running binary")?;
-    let status = isolated(Command::new(binary).args(args).current_dir(sandbox))
-        .status()
-        .context("failed to run git-stk in the sandbox")?;
-    if status.success() {
-        bail!(
-            "`git stk {}` was expected to stop on the conflict",
-            args.join(" ")
-        );
-    }
-    println!();
-    Ok(())
-}
-
-/// Resolve a conflicted file: write the merged contents and stage them.
-fn resolve(sandbox: &Path, file: &str, contents: &str) -> Result<()> {
-    shell_step(&format!("edit {file}, then git add {file}"));
-    fs::write(sandbox.join(file), contents).context("failed to write sandbox file")?;
-    git(sandbox, &["add", file])
-}
-
-/// Edit a tracked file and stage the change, without committing - a review
-/// fix waiting to be absorbed.
-fn stage_fix(sandbox: &Path, file: &str, contents: &str) -> Result<()> {
-    shell_step(&format!("edit {file}, then git add {file}"));
-    fs::write(sandbox.join(file), contents).context("failed to write sandbox file")?;
-    git(sandbox, &["add", file])
-}
-
-fn shell_step(narration: &str) {
-    anstream::println!("{} {narration}", style::paint(style::DIM, "$"));
-}
-
-fn commit(sandbox: &Path, file: &str, contents: &str, message: &str) -> Result<()> {
-    anstream::println!(
-        "{} edit {file}, then git commit -m {message:?}",
-        style::paint(style::DIM, "$"),
-    );
-    fs::write(sandbox.join(file), contents).context("failed to write sandbox file")?;
-    git(sandbox, &["add", file])?;
-    git(sandbox, &["commit", "-q", "-m", message])?;
-    Ok(())
-}
-
-fn git(sandbox: &Path, args: &[&str]) -> Result<()> {
+/// Run a `git` command in the sandbox for its effect, discarding output.
+fn run_git(sandbox: &Path, args: &[&str]) -> Result<()> {
     let status = isolated(Command::new("git").args(args).current_dir(sandbox))
         .status()
         .context("failed to run git in the sandbox")?;
@@ -404,19 +547,38 @@ fn nul_device() -> PathBuf {
     }
 }
 
-fn proceed() -> Result<bool> {
-    println!();
-    Ok(Confirm::with_theme(&ColorfulTheme::default())
-        .with_prompt("continue?")
-        .default(true)
-        .interact()
-        .unwrap_or(false))
-}
-
 fn banner(title: &str) {
     anstream::println!("{}", style::paint(style::CURRENT, title));
 }
 
 fn say(line: &str) {
     anstream::println!("{}", style::paint(style::DIM, line));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::fit;
+    use console::measure_text_width;
+
+    #[test]
+    fn fit_pads_short_lines_to_exact_width() {
+        let fitted = fit("ab", 5);
+        assert_eq!(fitted, "ab   ");
+        assert_eq!(measure_text_width(&fitted), 5);
+    }
+
+    #[test]
+    fn fit_truncates_long_lines_to_exact_width() {
+        let fitted = fit("abcdefghij", 4);
+        assert_eq!(measure_text_width(&fitted), 4);
+        assert!(fitted.ends_with('…'));
+    }
+
+    #[test]
+    fn fit_measures_width_ignoring_ansi() {
+        // Three visible chars wrapped in color codes, padded to width 6.
+        let fitted = fit("\x1b[31mred\x1b[0m", 6);
+        assert_eq!(measure_text_width(&fitted), 6);
+        assert!(fitted.contains("\x1b[31m"));
+    }
 }
