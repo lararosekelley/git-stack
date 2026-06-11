@@ -260,7 +260,9 @@ mid-loop, so the remaining PRs never show stale state. The section lives between
 the next update if the markup is hand-edited away.
 
 `submit` also links issues from branch names: a branch like `123-fix-thing` or `fix/issue-123` gets a
-`Closes #123` line in its PR/MR description, so the platform closes the issue when the review merges.
+`Closes #123` line in its PR/MR description, so the platform closes the issue when the review merges. This
+auto-link is one issue per branch; to close several from one PR (or use `Fixes`, cross-repo references,
+etc.), put the keywords in `--desc` (below) - the platform honors every closing keyword in the body.
 
 Tracking work in **Linear** or **Jira** instead? You do not need anything from stk: both vendors ship a
 GitHub/GitLab app that auto-links any branch or review whose name carries a ticket key
