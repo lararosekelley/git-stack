@@ -47,8 +47,9 @@ git stk setup
 
 New to stacking? `git stk guide` offers short interactive tours in a disposable sandbox repository:
 `intro` (the whole loop - create a stack, submit, restack, land it), `conflicts` (resolve and continue an
-interrupted restack), `repair` (rebuild lost stack metadata), and `absorb` (fold review fixes into the
-commits that introduced them). A built-in demo provider stands in for
+interrupted restack), `repair` (rebuild lost stack metadata), `absorb` (fold review fixes into the
+commits that introduced them), and `adopt` (adopt a hand-made branch into a stack, or move one to a new
+parent). A built-in demo provider stands in for
 GitHub, so nothing real is touched and no network is needed; `git config stk.provider demo` works in any
 scratch repo for the same offline playground.
 
