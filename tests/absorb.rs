@@ -123,6 +123,25 @@ fn absorb_folds_a_fix_into_its_owning_commit() {
 }
 
 #[test]
+fn absorb_folds_with_mnemonic_prefix_configured() {
+    // diff.mnemonicPrefix (and diff.noprefix) change diff header prefixes from
+    // a/ b/; absorb must force them back or it cannot parse or apply the diff.
+    let repo = stack();
+    repo.git(["config", "diff.mnemonicPrefix", "true"]);
+    repo.write("foo.txt", "alpha fixed\n");
+    repo.git(["add", "foo.txt"]);
+
+    repo.stack()
+        .args(["absorb"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("absorbed 1 hunk into 1 commit"));
+
+    assert_eq!(repo.git(["show", "feature/a:foo.txt"]), "alpha fixed");
+    assert!(repo.git(["status", "--porcelain"]).is_empty());
+}
+
+#[test]
 fn absorb_folds_into_multiple_commits_across_branches() {
     let repo = stack();
     repo.write("foo.txt", "alpha fixed\n");

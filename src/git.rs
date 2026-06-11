@@ -177,7 +177,9 @@ pub fn merge_base(a: &str, b: &str) -> Result<String> {
 /// otherwise all tracked changes (staged and unstaged). Zero context lines
 /// so each hunk's pre-image range pinpoints exactly the lines it touches.
 pub fn diff_against_head(cached: bool) -> Result<String> {
-    let mut args = vec!["diff", "--unified=0"];
+    // Pin a/ b/ prefixes: diff.mnemonicPrefix / diff.noprefix would otherwise
+    // emit headers absorb's parser and `git apply` cannot read.
+    let mut args = vec!["diff", "--unified=0", "--src-prefix=a/", "--dst-prefix=b/"];
     if cached {
         args.push("--cached");
     }
