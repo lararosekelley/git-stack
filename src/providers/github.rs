@@ -80,11 +80,8 @@ impl ReviewProvider for GitHubProvider {
                 ChecksState::Passed => return Ok(true),
                 ChecksState::Failed => return Ok(false),
                 ChecksState::NoneYet if no_checks >= super::CHECK_GRACE_POLLS => {
-                    // "No checks reported" is ambiguous right after a push: a
-                    // repo with no CI, or required checks that have not
-                    // registered yet. If branch protection is gating the
-                    // merge, they exist - keep waiting rather than merging
-                    // early into a block.
+                    // Grace exhausted. If branch protection gates the merge the
+                    // checks exist but have not registered - keep waiting.
                     if merge_is_gated(review)? {
                         no_checks = 0;
                     } else {

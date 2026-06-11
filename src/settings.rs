@@ -33,7 +33,7 @@ pub const SETTINGS: &[(&str, &str)] = &[
     (SUBMIT_DRAFT_KEY, "false"),
     (NO_UPDATE_CHECK_KEY, "false"),
     (ABSORB_INCLUDE_UNSTAGED_KEY, "false"),
-    (GITLAB_HOST_KEY, "gitlab.com"),
+    (GITLAB_HOST_KEY, "none; gitlab.com is always detected"),
 ];
 
 /// The remote used for provider detection, trunk discovery, and pushes.

@@ -133,7 +133,7 @@ pub trait ReviewProvider {
 pub fn detect_provider() -> Result<DetectedProvider> {
     if let Some(value) = git::config_get(settings::PROVIDER_KEY)? {
         let Some(kind) = ProviderKind::parse(&value) else {
-            bail!("unsupported stk.provider value {value:?}; expected github or gitlab");
+            bail!("unsupported stk.provider value {value:?}; expected github, gitlab, or demo");
         };
 
         return Ok(DetectedProvider {
@@ -159,7 +159,7 @@ pub fn detect_provider() -> Result<DetectedProvider> {
 }
 
 /// Recognize a host in a remote URL, in either `host:owner/repo` (SSH) or
-/// `host/owner/repo` (HTTPS) form. A configured `stk.gitlab.host` widens
+/// `host/owner/repo` (HTTPS) form. A configured `stk.gitlabHost` widens
 /// GitLab detection to a self-hosted instance.
 fn detect_provider_from_url(url: &str, gitlab_host: Option<&str>) -> Option<ProviderKind> {
     let normalized = url.to_ascii_lowercase();
