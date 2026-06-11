@@ -125,6 +125,15 @@ impl ReviewProvider for DemoProvider {
         Ok(String::new())
     }
 
+    fn close_review(&self, review: &ReviewRequest, _delete_branch: bool) -> Result<String> {
+        let mut state = load()?;
+        with_review(&mut state, review, |entry| {
+            entry["state"] = json!("closed");
+        })?;
+        save(&state)?;
+        Ok(format!("closed {}", review.id))
+    }
+
     fn open_review(&self, _review: &ReviewRequest) -> Result<String> {
         // The demo has no web page to open.
         Ok("demo reviews have no web page".to_owned())

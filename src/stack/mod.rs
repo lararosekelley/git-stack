@@ -23,6 +23,9 @@ pub use snapshot::{take as snapshot, undo};
 
 const PARENT_KEY: &str = "stkParent";
 const BASE_KEY: &str = "stkBase";
+/// Marks a branch as the rename of another that still has an open review, so
+/// the next submit can replace and close that review.
+const RENAMED_FROM_KEY: &str = "stkRenamedFrom";
 
 pub fn create_branch(branch: &str) -> Result<()> {
     let parent = git::current_branch()?;
@@ -236,6 +239,22 @@ pub fn unset_base_for_branch(branch: &str) -> Result<()> {
     unset_base(branch)
 }
 
+/// Record that `branch` is the rename of `old`, whose open review the next
+/// submit should replace and close.
+pub fn set_renamed_from(branch: &str, old: &str) -> Result<()> {
+    git::config_set(&renamed_from_key(branch), old)
+}
+
+/// The branch `branch` was renamed from, if a replaced review is still pending.
+pub fn renamed_from(branch: &str) -> Result<Option<String>> {
+    git::config_get(&renamed_from_key(branch))
+}
+
+/// Drop the rename marker once its review has been handled.
+pub fn clear_renamed_from(branch: &str) -> Result<()> {
+    git::config_unset(&renamed_from_key(branch))
+}
+
 /// Record the fork point between a branch and its parent (best effort; e.g.
 /// unrelated histories have no merge base, which is not an error here).
 pub fn record_base(branch: &str, parent: &str) {
@@ -371,4 +390,8 @@ fn parent_key(branch: &str) -> String {
 
 fn base_key(branch: &str) -> String {
     format!("branch.{branch}.{BASE_KEY}")
+}
+
+fn renamed_from_key(branch: &str) -> String {
+    format!("branch.{branch}.{RENAMED_FROM_KEY}")
 }

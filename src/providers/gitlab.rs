@@ -113,6 +113,12 @@ impl ReviewProvider for GitLabProvider {
         command_output("glab", &["mr", "update", review.id_value(), "--ready"])
     }
 
+    fn close_review(&self, review: &ReviewRequest, _delete_branch: bool) -> Result<String> {
+        // glab has no delete-source-branch flag on close, so the remote branch
+        // may linger; closing the MR is what retires the superseded review.
+        command_output("glab", &["mr", "close", review.id_value()])
+    }
+
     fn open_review(&self, review: &ReviewRequest) -> Result<String> {
         command_output("glab", &["mr", "view", review.id_value(), "--web"])
     }

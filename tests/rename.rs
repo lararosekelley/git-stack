@@ -98,8 +98,14 @@ fn rename_warns_when_a_review_heads_the_old_name() {
         .success()
         .stdout(predicates::str::contains(
             "warning: review #12 still heads feature/a; \
-             submitting feature/a2 will open a new review",
+             your next submit opens a fresh review for feature/a2 and closes #12",
         ));
+
+    // The supersession is recorded so the next submit can replace and close it.
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/a2.stkRenamedFrom"]),
+        "feature/a"
+    );
 }
 
 #[test]

@@ -111,6 +111,14 @@ impl ReviewProvider for GitHubProvider {
         command_output("gh", &["pr", "ready", review.id_value()])
     }
 
+    fn close_review(&self, review: &ReviewRequest, delete_branch: bool) -> Result<String> {
+        let mut args = vec!["pr", "close", review.id_value()];
+        if delete_branch {
+            args.push("--delete-branch");
+        }
+        command_output("gh", &args)
+    }
+
     fn open_review(&self, review: &ReviewRequest) -> Result<String> {
         command_output("gh", &["pr", "view", review.id_value(), "--web"])
     }
