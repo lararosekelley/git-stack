@@ -340,6 +340,11 @@ Branches are the real state; the metadata is just annotation. If it is ever lost
 rebuilds it from review bases (when `gh`/`glab` is available) and branch ancestry, and verifies recorded
 fork points. Anything it cannot resolve safely is reported for a manual `git stk adopt`.
 
+While a stack-rewriting command runs (`submit`, `merge`, `sync`, `restack`, `absorb`, and friends) it holds
+a lock at `.git/stk-lock` so a second git-stk run cannot rewrite the stack at the same time; read-only
+commands are never blocked. If a run is killed mid-operation the lock can linger - remove `.git/stk-lock`
+to clear it.
+
 Inspect everything stk reads or wrote with:
 
 ```sh

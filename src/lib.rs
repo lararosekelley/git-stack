@@ -2,6 +2,7 @@ pub mod cli;
 pub mod commands;
 pub mod completions;
 pub mod git;
+pub mod lock;
 pub mod notes;
 pub mod prompt;
 pub mod providers;
