@@ -87,6 +87,64 @@ fn adopt_list_and_detach_manage_existing_branches() {
 }
 
 #[test]
+fn adopt_refuses_to_form_a_cycle() {
+    let repo = TestRepo::new();
+
+    repo.git(["switch", "-c", "feature/a"]);
+    repo.git(["switch", "main"]);
+    repo.git(["switch", "-c", "feature/b"]);
+    repo.git(["switch", "main"]);
+
+    repo.stack()
+        .args(["adopt", "feature/a", "--parent", "main"])
+        .assert()
+        .success();
+    repo.stack()
+        .args(["adopt", "feature/b", "--parent", "feature/a"])
+        .assert()
+        .success();
+
+    // feature/b sits above feature/a, so making it feature/a's parent would
+    // close a loop. Refuse rather than write cyclic metadata.
+    repo.stack()
+        .args(["adopt", "feature/a", "--parent", "feature/b"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("cycle"));
+
+    // The original parent is untouched.
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/a.stkParent"]),
+        "main"
+    );
+}
+
+/// Cyclic metadata can still exist (e.g. written by an older version, or by
+/// raw `git config`). Commands that walk descendants must terminate cleanly
+/// rather than recurse forever and overflow the stack.
+#[test]
+fn cyclic_metadata_does_not_crash_descendant_walk() {
+    let repo = TestRepo::new();
+
+    repo.git(["switch", "-c", "feature/a"]);
+    repo.git(["switch", "main"]);
+    repo.git(["switch", "-c", "feature/b"]);
+
+    // Forge a 2-cycle directly, bypassing the adopt guard: a <-> b.
+    repo.git(["config", "branch.feature/a.stkParent", "feature/b"]);
+    repo.git(["config", "branch.feature/b.stkParent", "feature/a"]);
+
+    repo.git(["switch", "feature/a"]);
+
+    // `list --format markdown` collects via branch_and_descendants; before the
+    // visited-set guard this overflowed the stack and core-dumped.
+    repo.stack()
+        .args(["list", "--format", "markdown"])
+        .assert()
+        .success();
+}
+
+#[test]
 fn adopt_with_no_args_uses_current_branch_and_trunk() {
     let repo = TestRepo::new();
     // A branch made with raw git, switched to but not yet in a stack.

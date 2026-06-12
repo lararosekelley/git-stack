@@ -1,7 +1,11 @@
 //! The rebase engine: restack a whole stack parent-first, persisting enough
 //! state across conflicts for `continue`/`abort` to resume or unwind.
 
-use std::{collections::BTreeMap, fs, path::PathBuf};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fs,
+    path::PathBuf,
+};
 
 use anyhow::{Context, Result, bail};
 
@@ -142,7 +146,8 @@ fn restack_order(current: &str, parents: &BTreeMap<String, String>) -> Vec<Strin
         branches.push(current.to_owned());
     }
 
-    collect_descendants(current, &children, &mut branches);
+    let mut visited = BTreeSet::from([current.to_owned()]);
+    collect_descendants(current, &children, &mut branches, &mut visited);
     branches
 }
 
