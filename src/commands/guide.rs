@@ -34,13 +34,14 @@ const TOPICS: &[(&str, &str, Walk)] = &[
         "adopt a branch into a stack, or move it to a new parent",
         adopt,
     ),
+    ("undo", "reverse the last stack-rewriting command", undo),
 ];
 
 /// Walk the stacked workflow in a disposable sandbox repository.
 #[derive(Debug, clap::Args)]
 pub struct Guide {
     /// Which tour to run; omit for a menu.
-    #[arg(value_parser = clap::builder::PossibleValuesParser::new(["intro", "conflicts", "repair", "absorb", "adopt"]))]
+    #[arg(value_parser = clap::builder::PossibleValuesParser::new(["intro", "conflicts", "repair", "absorb", "adopt", "undo"]))]
     topic: Option<String>,
 }
 
@@ -332,6 +333,36 @@ fn adopt(tour: &mut Tour) -> Result<()> {
     tour.stk(&["list", "--all"])?;
     tour.say("feature/web still exists; git-stk just no longer tracks it. Re-`adopt`");
     tour.say("it onto any parent whenever you want it back in a stack.");
+    tour.finish()
+}
+
+fn undo(tour: &mut Tour) -> Result<()> {
+    tour.banner("1/2 - rewrite the stack");
+    tour.say("Stack-rewriting commands - restack, sync, merge, cleanup, rename -");
+    tour.say("snapshot the stack before they touch it. Start with two branches:");
+    tour.stk(&["new", "feature/api"])?;
+    tour.commit("api.txt", "endpoints\n", "add api")?;
+    tour.stk(&["new", "feature/web"])?;
+    tour.commit("web.txt", "pages\n", "add web")?;
+    tour.say("Feedback lands on the bottom branch, leaving the child behind it:");
+    tour.stk(&["down"])?;
+    tour.commit("api.txt", "endpoints\nauth\n", "add auth")?;
+    tour.say("`restack` replays feature/web onto the rewritten feature/api - a real");
+    tour.say("rewrite of its commit:");
+    tour.stk(&["restack"])?;
+    if tour.pause()?.stop() {
+        return Ok(());
+    }
+
+    tour.banner("2/2 - take it back");
+    tour.say("Changed your mind? `undo` reverses the last stack-rewriting command,");
+    tour.say("restoring every branch tip and the stack metadata from that snapshot:");
+    tour.stk(&["undo"])?;
+    tour.say("feature/web is back exactly where it was. `undo` is one level deep and");
+    tour.say("one-shot - a second one has nothing left to restore:");
+    tour.stk_fails(&["undo"])?;
+    tour.say("And it is local only: pushes and already-merged reviews are never");
+    tour.say("reverted - `undo` touches branch tips and metadata, nothing remote.");
     tour.finish()
 }
 
