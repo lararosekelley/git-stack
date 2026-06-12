@@ -23,7 +23,7 @@ impl Lock {
     /// Take the lock for `command`, or fail if another git-stk process holds
     /// it. Naming the command makes the contention message actionable.
     pub fn acquire(command: &str) -> Result<Self> {
-        let Ok(path) = git::git_path(LOCK_FILE) else {
+        let Ok(path) = git::git_common_path(LOCK_FILE) else {
             // Not a git repo: nothing to guard, and the command will report
             // the real problem itself.
             return Ok(Self { path: None });

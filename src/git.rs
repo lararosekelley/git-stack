@@ -29,6 +29,18 @@ pub fn git_path(path: &str) -> Result<String> {
     output(&["rev-parse", "--git-path", path])
 }
 
+/// Resolve `path` under the repo's *common* git dir, which all linked
+/// worktrees share, rather than the per-worktree dir `git_path` returns. Use
+/// this for state that guards or mirrors the shared config (`branch.*`), so
+/// every worktree of a repo agrees on one file.
+pub fn git_common_path(path: &str) -> Result<String> {
+    let common_dir = output(&["rev-parse", "--git-common-dir"])?;
+    Ok(std::path::Path::new(&common_dir)
+        .join(path)
+        .to_string_lossy()
+        .into_owned())
+}
+
 pub fn remote_url(remote: &str) -> Result<Option<String>> {
     let output = Command::new("git")
         .args(["remote", "get-url", remote])

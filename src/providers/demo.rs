@@ -141,7 +141,7 @@ impl ReviewProvider for DemoProvider {
 }
 
 fn state_path() -> Result<PathBuf> {
-    Ok(PathBuf::from(git::git_path(STATE_FILE)?))
+    Ok(PathBuf::from(git::git_common_path(STATE_FILE)?))
 }
 
 fn load() -> Result<Value> {

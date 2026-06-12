@@ -91,8 +91,14 @@ impl TestRepo {
     }
 
     pub fn stack(&self) -> assert_cmd::Command {
+        self.stack_in(self.path())
+    }
+
+    /// Like [`stack`](Self::stack) but run from `dir` - e.g. a linked worktree
+    /// of this repo - instead of the main worktree root.
+    pub fn stack_in(&self, dir: &Path) -> assert_cmd::Command {
         let mut command = assert_cmd::Command::cargo_bin("git-stk").expect("git-stk binary");
-        command.current_dir(self.path());
+        command.current_dir(dir);
         command.env("GIT_EDITOR", "true");
         command.env("GIT_CONFIG_GLOBAL", nul_device());
         command.env("GIT_CONFIG_NOSYSTEM", "1");
