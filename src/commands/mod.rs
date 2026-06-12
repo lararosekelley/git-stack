@@ -15,6 +15,7 @@ pub mod children;
 pub mod cleanup;
 pub mod completions;
 pub mod config;
+pub mod credits;
 pub mod detach;
 pub mod down;
 pub mod guide;

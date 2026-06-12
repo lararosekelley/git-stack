@@ -308,6 +308,8 @@ release after their work is done - capped at two seconds, silent on any failure 
 terminal - and print a one-line nudge when behind. The check stamps `update-check` next to the receipt;
 `git config stk.noUpdateCheck true` turns it off.
 
+`git stk credits` lists the stacked-workflow tools that inspired git-stk, with a link to each.
+
 ## Configuration
 
 All settings live under `[stk]` in git config, so the tool's footprint stays separated from git's own.
