@@ -116,6 +116,20 @@ impl ReviewProvider for DemoProvider {
         Ok(true)
     }
 
+    fn open_reviews(&self) -> Result<Vec<ReviewRequest>> {
+        let state = load()?;
+        Ok(state["reviews"]
+            .as_array()
+            .map(|reviews| {
+                reviews
+                    .iter()
+                    .filter(|review| review["state"].as_str() == Some("open"))
+                    .map(review_from)
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
     fn mark_ready(&self, review: &ReviewRequest) -> Result<String> {
         let mut state = load()?;
         with_review(&mut state, review, |entry| {

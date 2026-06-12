@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 
 use super::json::{
-    first_json_item, optional_bool, optional_string, parse_body_field, parse_state, required_string,
+    first_json_item, json_items, optional_bool, optional_string, parse_body_field, parse_state,
+    required_string,
 };
 use super::{ReviewProvider, ReviewRequest, command_output, merge_with_retry};
 
@@ -109,6 +110,22 @@ impl ReviewProvider for GitLabProvider {
         }
     }
 
+    fn open_reviews(&self) -> Result<Vec<ReviewRequest>> {
+        let output = command_output(
+            "glab",
+            &[
+                "mr",
+                "list",
+                "--opened",
+                "--output",
+                "json",
+                "--per-page",
+                "200",
+            ],
+        )?;
+        parse_gitlab_reviews(&output)
+    }
+
     fn mark_ready(&self, review: &ReviewRequest) -> Result<String> {
         command_output("glab", &["mr", "update", review.id_value(), "--ready"])
     }
@@ -136,19 +153,26 @@ fn list_review(branch: &str, state_flag: Option<&str>) -> Result<Option<ReviewRe
 }
 
 fn parse_gitlab_review(output: &str) -> Result<Option<ReviewRequest>> {
-    let Some(review) = first_json_item(output)? else {
-        return Ok(None);
-    };
+    first_json_item(output)?
+        .as_ref()
+        .map(gitlab_review_from)
+        .transpose()
+}
 
-    Ok(Some(ReviewRequest {
-        id: format!("!{}", required_string(&review, &["iid", "id"])?),
-        branch: required_string(&review, &["source_branch", "sourceBranch"])?,
-        base: required_string(&review, &["target_branch", "targetBranch"])?,
-        state: parse_state(&required_string(&review, &["state"])?),
-        url: required_string(&review, &["web_url", "webUrl", "url"])?,
-        title: optional_string(&review, "title"),
-        draft: optional_bool(&review, "draft"),
-    }))
+fn parse_gitlab_reviews(output: &str) -> Result<Vec<ReviewRequest>> {
+    json_items(output)?.iter().map(gitlab_review_from).collect()
+}
+
+fn gitlab_review_from(review: &serde_json::Value) -> Result<ReviewRequest> {
+    Ok(ReviewRequest {
+        id: format!("!{}", required_string(review, &["iid", "id"])?),
+        branch: required_string(review, &["source_branch", "sourceBranch"])?,
+        base: required_string(review, &["target_branch", "targetBranch"])?,
+        state: parse_state(&required_string(review, &["state"])?),
+        url: required_string(review, &["web_url", "webUrl", "url"])?,
+        title: optional_string(review, "title"),
+        draft: optional_bool(review, "draft"),
+    })
 }
 
 #[cfg(test)]

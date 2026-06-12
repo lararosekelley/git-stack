@@ -1,9 +1,27 @@
+use std::collections::BTreeMap;
+
 use anyhow::Result;
 use clap::ValueEnum;
 
 use crate::commands::Run;
 use crate::providers::{ReviewRequest, ReviewState, detect_provider, review_provider};
 use crate::{git, stack};
+
+/// Branch -> open-review id (e.g. `#12`), in one provider call. Best effort:
+/// an absent or failing provider (offline, no gh/glab) yields an empty map, so
+/// the tree still prints, just without numbers.
+fn review_numbers() -> BTreeMap<String, String> {
+    let Some(provider) = detect_provider().ok().map(|p| review_provider(p.kind)) else {
+        return BTreeMap::new();
+    };
+    let Ok(reviews) = provider.open_reviews() else {
+        return BTreeMap::new();
+    };
+    reviews
+        .into_iter()
+        .map(|review| (review.branch, review.id))
+        .collect()
+}
 
 /// A shareable rendering of the stack.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -30,8 +48,8 @@ impl Run for List {
     fn run(self) -> Result<()> {
         match (self.format, self.all) {
             (Some(format), _) => list_formatted(format),
-            (None, true) => crate::stack::print_all_stacks(),
-            (None, false) => crate::stack::print_stack(),
+            (None, true) => crate::stack::print_all_stacks(&review_numbers()),
+            (None, false) => crate::stack::print_stack(&review_numbers()),
         }
     }
 }

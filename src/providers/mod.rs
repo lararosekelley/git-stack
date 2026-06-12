@@ -123,6 +123,10 @@ pub trait ReviewProvider {
     /// there are none), Ok(false) when something failed.
     fn wait_for_checks(&self, review: &ReviewRequest) -> Result<bool>;
 
+    /// Every open review, in one call - for annotating the stack with review
+    /// numbers without a lookup per branch.
+    fn open_reviews(&self) -> Result<Vec<ReviewRequest>>;
+
     /// Mark a draft review as ready for review.
     fn mark_ready(&self, review: &ReviewRequest) -> Result<String>;
 
