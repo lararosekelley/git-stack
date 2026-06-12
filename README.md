@@ -42,7 +42,7 @@ Alpine, or an older distro.
 Then install the man page and wire up shell completions (idempotent; prompts before touching your shell rc):
 
 ```sh
-git stk setup
+git stk setup [-y] [--refresh]
 ```
 
 New to stacking? `git stk guide` offers short interactive tours in a disposable sandbox repository:
@@ -82,7 +82,9 @@ if (Get-Command git-stk -ErrorAction SilentlyContinue) { git stk completions pow
 `git stk setup` detects bash, zsh, and fish from `$SHELL` (covering Git Bash and WSL), and falls back to
 PowerShell on native Windows by wiring `$PROFILE`. Elvish is also supported via `git stk completions
 elvish`. The bash and zsh output includes a wrapper so git's own completion can complete `git stk <TAB>`
-in addition to `git-stk <TAB>`.
+in addition to `git-stk <TAB>`. `-y`/`--yes` skips the shell-rc confirmation for non-interactive setup;
+`--refresh` only re-renders the man page and never touches your shell rc - it is what `upgrade` runs with
+the freshly installed binary.
 
 ## Install For Development
 
