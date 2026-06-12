@@ -217,6 +217,50 @@ fn command_output(program: &str, args: &[&str]) -> Result<String> {
     }
 }
 
+/// Attempts and the pause between them for a merge the platform briefly
+/// rejects because it has not finished recomputing the moved base. Landing a
+/// tall stack moves the trunk on every merge, so this race is common.
+const MERGE_ATTEMPTS: u32 = 3;
+const MERGE_RETRY_BACKOFF: Duration = Duration::from_millis(1500);
+
+/// Whether a failed merge is the platform transiently rejecting against a base
+/// it has not settled - worth retrying - rather than a real failure (conflict,
+/// failed check, closed review), which must surface immediately.
+fn is_transient_merge_error(error: &anyhow::Error) -> bool {
+    let text = error.to_string().to_lowercase();
+    [
+        "base branch was modified",
+        "head branch was modified",
+        "try the merge again",
+    ]
+    .iter()
+    .any(|signature| text.contains(signature))
+}
+
+/// Run a merge, retrying while it fails transiently so the "base branch was
+/// modified" race does not stop a `merge --all` loop.
+fn merge_with_retry(attempt: impl FnMut() -> Result<String>) -> Result<String> {
+    retry_transient_merge(MERGE_ATTEMPTS, MERGE_RETRY_BACKOFF, attempt)
+}
+
+fn retry_transient_merge(
+    attempts: u32,
+    backoff: Duration,
+    mut attempt: impl FnMut() -> Result<String>,
+) -> Result<String> {
+    for remaining in (0..attempts).rev() {
+        match attempt() {
+            Ok(output) => return Ok(output),
+            Err(error) if remaining > 0 && is_transient_merge_error(&error) => {
+                std::thread::sleep(backoff);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    // attempts is always nonzero, so the final iteration returns above.
+    Err(anyhow!("merge retried with no attempts left"))
+}
+
 impl fmt::Display for ReviewState {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -248,5 +292,51 @@ pub(crate) fn label(title: &str, id: &str) -> String {
         id.to_owned()
     } else {
         format!("{title} ({id})")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn transient_error_is_retried_then_succeeds() {
+        let mut calls = 0;
+        let result = retry_transient_merge(3, Duration::ZERO, || {
+            calls += 1;
+            if calls < 2 {
+                Err(anyhow!(
+                    "gh failed: GraphQL: Base branch was modified. Review and try the merge again."
+                ))
+            } else {
+                Ok("merged".to_owned())
+            }
+        });
+        assert_eq!(result.unwrap(), "merged");
+        assert_eq!(calls, 2, "should retry once then succeed");
+    }
+
+    #[test]
+    fn a_persistent_transient_error_gives_up_after_the_attempt_budget() {
+        let mut calls = 0;
+        let result = retry_transient_merge(3, Duration::ZERO, || {
+            calls += 1;
+            Err(anyhow!("gh failed: Base branch was modified"))
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, 3, "should try exactly the budgeted number of times");
+    }
+
+    #[test]
+    fn a_real_failure_is_not_retried() {
+        let mut calls = 0;
+        let result = retry_transient_merge(3, Duration::ZERO, || {
+            calls += 1;
+            Err(anyhow!(
+                "gh failed: Pull request is not mergeable: conflicts"
+            ))
+        });
+        assert!(result.is_err());
+        assert_eq!(calls, 1, "a non-transient error must surface immediately");
     }
 }
