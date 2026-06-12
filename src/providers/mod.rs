@@ -171,9 +171,18 @@ fn detect_provider_from_url(url: &str, gitlab_host: Option<&str>) -> Option<Prov
     // merely embeds the name (mygithub.com, evil.com/github.com/...).
     let is = |domain: &str| host == domain || host.ends_with(&format!(".{domain}"));
 
+    // The configured host goes through host_of too, so a full URL
+    // (https://gitlab.example.com) works as well as a bare host.
+    let gitlab_self_hosted = || {
+        gitlab_host.is_some_and(|configured| {
+            let configured = configured.to_ascii_lowercase();
+            is(host_of(&configured))
+        })
+    };
+
     if is("github.com") {
         Some(ProviderKind::GitHub)
-    } else if is("gitlab.com") || gitlab_host.is_some_and(|host| is(&host.to_ascii_lowercase())) {
+    } else if is("gitlab.com") || gitlab_self_hosted() {
         Some(ProviderKind::GitLab)
     } else {
         None
@@ -182,13 +191,25 @@ fn detect_provider_from_url(url: &str, gitlab_host: Option<&str>) -> Option<Prov
 
 /// The host of a git remote URL: the part after any `scheme://` and `user@`,
 /// up to the path, port, or scp-style `:`. Covers `https://host/owner/repo`,
-/// `ssh://git@host/owner/repo`, and scp-like `git@host:owner/repo`.
+/// `ssh://git@host:port/owner/repo`, scp-like `git@host:owner/repo`, and
+/// `[ipv6]` literals.
 fn host_of(url: &str) -> &str {
     let after_scheme = url.split_once("://").map_or(url, |(_, rest)| rest);
-    let after_user = after_scheme
-        .split_once('@')
-        .map_or(after_scheme, |(_, rest)| rest);
-    after_user.split(['/', ':']).next().unwrap_or(after_user)
+    // Userinfo and the port live in the authority, before the path's first
+    // '/'. (The scp form `git@host:owner/repo` keeps the host before that '/'
+    // too.) Strip userinfo at the last '@' so an '@' inside it is tolerated.
+    let authority = after_scheme.split('/').next().unwrap_or(after_scheme);
+    let host_port = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, rest)| rest);
+    // An IPv6 literal keeps its colons inside `[..]`; any port follows it.
+    if let Some(after_bracket) = host_port.strip_prefix('[') {
+        return after_bracket
+            .split_once(']')
+            .map_or(host_port, |(addr, _)| addr);
+    }
+    // Otherwise the host ends at a ':' - a port, or the scp path separator.
+    host_port.split(':').next().unwrap_or(host_port)
 }
 
 pub(crate) fn review_provider(kind: ProviderKind) -> Box<dyn ReviewProvider> {
@@ -338,5 +359,41 @@ mod tests {
         });
         assert!(result.is_err());
         assert_eq!(calls, 1, "a non-transient error must surface immediately");
+    }
+
+    #[test]
+    fn host_of_extracts_the_host_across_url_shapes() {
+        assert_eq!(host_of("https://github.com/owner/repo.git"), "github.com");
+        assert_eq!(host_of("git@github.com:owner/repo.git"), "github.com");
+        assert_eq!(
+            host_of("ssh://git@gitlab.example.com:22/g/r"),
+            "gitlab.example.com"
+        );
+        assert_eq!(host_of("https://user@github.com/owner/repo"), "github.com");
+        assert_eq!(host_of("https://github.com:8443/owner/repo"), "github.com");
+        assert_eq!(
+            host_of("https://[2001:db8::1]:443/owner/repo"),
+            "2001:db8::1"
+        );
+        assert_eq!(host_of("gitlab.example.com"), "gitlab.example.com");
+        // Userinfo with an embedded '@' is stripped at the last one.
+        assert_eq!(host_of("https://user@name@github.com/r"), "github.com");
+    }
+
+    #[test]
+    fn self_hosted_gitlab_accepts_a_bare_host_or_a_full_url() {
+        let remote = "git@gitlab.example.com:team/repo.git";
+        for configured in ["gitlab.example.com", "https://gitlab.example.com"] {
+            assert_eq!(
+                detect_provider_from_url(remote, Some(configured)),
+                Some(ProviderKind::GitLab),
+                "configured {configured:?} should detect the self-hosted host"
+            );
+        }
+        // A look-alike host is still not matched.
+        assert_eq!(
+            detect_provider_from_url("git@notgitlab.com:o/r", Some("gitlab.example.com")),
+            None
+        );
     }
 }

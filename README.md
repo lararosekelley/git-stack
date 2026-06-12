@@ -318,8 +318,9 @@ Everything is optional; defaults shown below:
     ; Review provider: github, gitlab, or demo (offline playground).
     ; Default: auto-detect from the remote URL.
     provider = github
-    ; Self-hosted GitLab host to detect as GitLab alongside gitlab.com.
-    ; `glab` picks up the host from the remote itself. Default: gitlab.com only.
+    ; Self-hosted GitLab host to detect as GitLab alongside gitlab.com (a bare
+    ; host or a full URL). `glab` picks up the host from the remote itself.
+    ; Default: gitlab.com only.
     gitlabHost = gitlab.example.com
     ; Remote used for provider detection and pushes. Default: origin.
     remote = origin
