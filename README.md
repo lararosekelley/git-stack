@@ -213,7 +213,7 @@ git stk review [branch]
 git stk view [branch]
 git stk sync [--dry-run] [--push | --no-push]
 git stk merge [-y] [--auto | --all [--wait | --no-wait]] [--dry-run]
-git stk repair [--dry-run]
+git stk repair [--dry-run | --from-remote]
 git stk submit [branch] [-d <desc>] [--draft | --no-draft] [--ready] [--dry-run] [--push | --no-push]
 git stk submit [--stack | --no-stack | --downstack] [-d <desc>] [--draft | --no-draft] [--ready] [--rebuild-overview] [--dry-run] [--push | --no-push]
 git stk cleanup [branch] [--dry-run] [--keep-branch]
@@ -352,6 +352,12 @@ The tool also manages per-branch metadata: `branch.<name>.stkParent` (the stack 
 Branches are the real state; the metadata is just annotation. If it is ever lost or stale, `git stk repair`
 rebuilds it from review bases (when `gh`/`glab` is available) and branch ancestry, and verifies recorded
 fork points. Anything it cannot resolve safely is reported for a manual `git stk adopt`.
+
+Working across machines? The parent map rides along on a shared ref (`refs/stk/metadata`), published
+automatically whenever git-stk pushes branches (`submit`/`restack`/`sync` with push). On another clone,
+`git stk repair --from-remote` fetches that ref, pulls down any of its branches you do not have yet, and
+rebuilds the local metadata - no platform or open PRs required. (Local-only commits you have not pushed
+still can't transfer, of course.)
 
 While a stack-rewriting command runs (`submit`, `merge`, `sync`, `restack`, `absorb`, and friends) it holds
 a lock at `.git/stk-lock` so a second git-stk run cannot rewrite the stack at the same time; read-only

@@ -4,7 +4,7 @@ use clap::ArgAction;
 use crate::commands::Run;
 use crate::providers::{detect_provider, review_provider};
 use crate::style;
-use crate::{git, stack};
+use crate::{git, settings, stack};
 
 /// Rebuild or verify local stack metadata from reviews and ancestry.
 #[derive(Debug, clap::Args)]
@@ -12,12 +12,34 @@ pub struct Repair {
     /// Print what would change without updating local metadata.
     #[arg(long, action = ArgAction::SetTrue)]
     dry_run: bool,
+    /// Rebuild the stack from the metadata another machine pushed, fetching
+    /// any of its branches that are missing locally.
+    #[arg(long, action = ArgAction::SetTrue, conflicts_with = "dry_run")]
+    from_remote: bool,
 }
 
 impl Run for Repair {
     fn run(self) -> Result<()> {
-        repair(self.dry_run)
+        if self.from_remote {
+            repair_from_remote()
+        } else {
+            repair(self.dry_run)
+        }
     }
+}
+
+/// Rehydrate a stack on this machine from the metadata ref pushed elsewhere.
+fn repair_from_remote() -> Result<()> {
+    let remote = settings::remote()?;
+    let attached = stack::apply_remote_metadata(&remote)?;
+    anstream::println!(
+        "{}",
+        style::success(&format!(
+            "rebuilt {attached} branch{} from {remote}",
+            if attached == 1 { "" } else { "es" }
+        ))
+    );
+    Ok(())
 }
 
 /// Rebuild or verify local stack metadata. For branches missing a parent,

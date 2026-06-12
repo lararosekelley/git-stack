@@ -236,6 +236,8 @@ fn finish_restack(branches: &[String], push: bool) -> Result<()> {
     if push {
         git::push_force_with_lease(&remote, branches)?;
         anstream::println!("pushed {} to {remote}", style::branch(&branches.join(" ")));
+        // Keep the shared parent map in step with the pushed branches.
+        super::publish_metadata(&remote);
     } else {
         println!("remote branches may be stale; push them with:");
         anstream::println!(

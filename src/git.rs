@@ -110,6 +110,54 @@ pub fn push_set_upstream_force_with_lease(remote: &str, branches: &[String]) -> 
     status(&args).with_context(|| format!("failed to push branches to {remote}"))
 }
 
+/// Store `content` as a single-file commit and point `reference` at it, so the
+/// data rides along a normal ref push. Orphan each time: the ref just moves to
+/// the new commit (callers force-push it, as it is regenerable).
+pub fn write_blob_ref(reference: &str, file: &str, content: &str) -> Result<()> {
+    let blob = output_with_stdin(&["hash-object", "-w", "--stdin"], content)
+        .context("failed to hash stack metadata")?;
+    let tree = output_with_stdin(&["mktree"], &format!("100644 blob {blob}\t{file}\n"))
+        .context("failed to write stack metadata tree")?;
+    let commit = output(&["commit-tree", &tree, "-m", "git-stk stack metadata"])
+        .context("failed to commit stack metadata")?;
+    status(&["update-ref", reference, &commit])
+        .with_context(|| format!("failed to update {reference}"))
+}
+
+/// Force-push a single ref to `remote` (the value is regenerable, so
+/// last-writer-wins is fine).
+pub fn push_ref(remote: &str, reference: &str) -> Result<()> {
+    status(&[
+        "push",
+        "--force",
+        remote,
+        &format!("{reference}:{reference}"),
+    ])
+    .with_context(|| format!("failed to push {reference} to {remote}"))
+}
+
+/// Force-fetch a single ref from `remote` into the same local ref.
+pub fn fetch_ref(remote: &str, reference: &str) -> Result<()> {
+    status(&["fetch", remote, &format!("+{reference}:{reference}")])
+        .with_context(|| format!("failed to fetch {reference} from {remote}"))
+}
+
+/// The contents of `file` in the commit `reference` points at, or None when
+/// the ref or file is absent.
+pub fn read_ref_file(reference: &str, file: &str) -> Result<Option<String>> {
+    let output = Command::new("git")
+        .args(["cat-file", "blob", &format!("{reference}:{file}")])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+        .context("failed to run git cat-file")?;
+    if output.status.success() {
+        Ok(Some(String::from_utf8_lossy(&output.stdout).into_owned()))
+    } else {
+        Ok(None)
+    }
+}
+
 pub fn rebase(parent: &str, branch: &str, update_refs: bool) -> Result<()> {
     let mut args = vec!["rebase"];
     if update_refs {
@@ -461,6 +509,30 @@ fn output(args: &[&str]) -> Result<String> {
         .output()
         .context("failed to run git")?;
 
+    if output.status.success() {
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+    } else {
+        Err(command_error("git", &output.stderr))
+    }
+}
+
+/// Like [`output`], but feeds `input` to the command on stdin (for plumbing
+/// such as `hash-object --stdin` and `mktree`).
+fn output_with_stdin(args: &[&str], input: &str) -> Result<String> {
+    let mut child = Command::new("git")
+        .args(args)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to run git")?;
+    {
+        let mut stdin = child.stdin.take().context("git has no stdin")?;
+        stdin
+            .write_all(input.as_bytes())
+            .context("failed to write to git")?;
+    }
+    let output = child.wait_with_output().context("failed to run git")?;
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
     } else {
