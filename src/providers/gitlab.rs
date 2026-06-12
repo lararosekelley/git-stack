@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 use super::json::{
     first_json_item, optional_bool, optional_string, parse_body_field, parse_state, required_string,
 };
-use super::{ReviewProvider, ReviewRequest, command_output};
+use super::{ReviewProvider, ReviewRequest, command_output, merge_with_retry};
 
 pub(super) struct GitLabProvider;
 
@@ -76,7 +76,7 @@ impl ReviewProvider for GitLabProvider {
         if auto {
             args.push("--auto-merge");
         }
-        command_output("glab", &args)
+        merge_with_retry(|| command_output("glab", &args))
     }
 
     fn wait_for_checks(&self, review: &ReviewRequest) -> Result<bool> {
