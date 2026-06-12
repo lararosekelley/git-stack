@@ -69,6 +69,7 @@ impl Run for Credits {
             let indent = " ".repeat(width + 2);
             anstream::println!("  {indent}{}", style::paint(style::DIM, url));
         }
+        anstream::println!("{}", style::paint(style::DIM, "\nBuilt by Lara Kelley (@lararosekelley)"));
         Ok(())
     }
 }
