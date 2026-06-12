@@ -290,13 +290,20 @@ pub fn branch_and_descendants(branch: &str) -> Result<Vec<String>> {
 /// separately, not through `branch`. The trunk itself is excluded; an
 /// unanchored root stays in (`path_from_root` keeps it).
 pub fn stack_line(branch: &str) -> Result<Vec<String>> {
+    // The trunk is not part of any stack, so standing on it your line is empty
+    // - its descendants are sibling stacks, each left for its own submit.
+    // Without this, `branch_and_descendants(trunk)` would pull in every stack.
+    let trunk = trunk_branch(&git::local_branches()?);
+    if Some(branch) == trunk.as_deref() {
+        return Ok(Vec::new());
+    }
+
     let mut line = path_from_root(branch)?; // [bottom ..= branch]
     let above = branch_and_descendants(branch)?; // [branch, ..descendants]
     line.extend(above.into_iter().skip(1)); // append above-branch, dropping the duplicate
 
     // `path_from_root` keeps its starting branch even when that is the trunk
     // (you are standing on it); a trunk is never part of a stack.
-    let trunk = trunk_branch(&git::local_branches()?);
     line.retain(|candidate| Some(candidate) != trunk.as_ref());
     Ok(line)
 }

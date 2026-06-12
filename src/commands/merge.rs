@@ -56,7 +56,7 @@ impl Run for Merge {
 
 fn merge(dry_run: bool, yes: bool, auto: bool) -> Result<()> {
     let Some(bottom) = bottom_branch()? else {
-        bail!("no stacked branches to merge");
+        bail!(nothing_to_merge_hint()?);
     };
 
     let provider = detect_provider()?;
@@ -102,7 +102,7 @@ fn merge(dry_run: bool, yes: bool, auto: bool) -> Result<()> {
 /// before its merge.
 fn merge_all(dry_run: bool, yes: bool, wait: bool) -> Result<()> {
     let Some(bottom) = bottom_branch()? else {
-        bail!("no stacked branches to merge");
+        bail!(nothing_to_merge_hint()?);
     };
 
     let provider = detect_provider()?;
@@ -193,6 +193,23 @@ fn merge_all(dry_run: bool, yes: bool, wait: bool) -> Result<()> {
 fn bottom_branch() -> Result<Option<String>> {
     let current = crate::git::current_branch()?;
     Ok(stack::stack_line(&current)?.into_iter().next())
+}
+
+/// "Nothing to merge" message, tailored to call out the trunk - a natural
+/// place to be standing, but never part of a stack - rather than implying the
+/// repo has no stacks at all.
+fn nothing_to_merge_hint() -> Result<String> {
+    let current = crate::git::current_branch()?;
+    let trunk = stack::trunk_branch(&crate::git::local_branches()?);
+    // Only blame the trunk when it actually carries stacks: then standing on it
+    // is the footgun. An empty repo on the trunk just has nothing to merge.
+    let on_trunk_with_stacks =
+        Some(&current) == trunk.as_ref() && !stack::children_for_branch(&current)?.is_empty();
+    Ok(if on_trunk_with_stacks {
+        format!("you are on the trunk ({current}); check out a stacked branch first")
+    } else {
+        "no stacked branches to merge".to_owned()
+    })
 }
 
 /// The branch's review, validated as mergeable: it exists, is open, and

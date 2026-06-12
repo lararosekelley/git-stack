@@ -379,6 +379,46 @@ fn submit_stack_does_not_sweep_sibling_stacks_on_the_trunk() {
 }
 
 #[test]
+fn stack_wide_commands_from_the_trunk_refuse_instead_of_sweeping() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+
+    // Two independent stacks rooted on the trunk.
+    repo.stack().args(["new", "feature/x"]).assert().success();
+    repo.commit_file("x.txt", "x\n", "add x");
+    repo.git(["switch", "main"]);
+    repo.stack().args(["new", "feature/y"]).assert().success();
+    repo.commit_file("y.txt", "y\n", "add y");
+
+    // Standing on the trunk, a stack-wide submit must point you at a stacked
+    // branch rather than open reviews for every sibling stack.
+    repo.git(["switch", "main"]);
+    repo.stack()
+        .args(["submit", "--stack"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("you are on the trunk"))
+        .stderr(predicates::str::contains("feature/x").not());
+
+    // Same for `merge --all`: no sibling stack gets swept.
+    repo.stack()
+        .args(["merge", "--all", "-y"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("you are on the trunk"));
+
+    // Nothing was submitted: feature/x still has no review.
+    repo.git(["switch", "feature/x"]);
+    repo.stack()
+        .args(["view"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "no demo review found for feature/x",
+        ));
+}
+
+#[test]
 fn rename_then_submit_replaces_and_prunes_the_old_review() {
     let repo = TestRepo::new();
     repo.git(["config", "stk.provider", "demo"]);

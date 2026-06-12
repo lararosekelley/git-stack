@@ -121,8 +121,21 @@ pub fn submit(
         // merely share the trunk are left for their own submit.
         stack::stack_line(&branch)?
     } else {
-        vec![branch]
+        vec![branch.clone()]
     };
+
+    // The trunk is never part of a stack, so a stack-wide submit from it has
+    // nothing of its own to submit (its descendants are sibling stacks). Say so
+    // plainly rather than pushing an empty set or sweeping every stack.
+    if submit_stack || downstack {
+        let trunk = stack::trunk_branch(&git::local_branches()?);
+        if Some(&branch) == trunk.as_ref() {
+            if stack::children_for_branch(&branch)?.is_empty() {
+                bail!("no stacked branches to submit");
+            }
+            bail!("you are on the trunk ({branch}); check out a stacked branch first");
+        }
+    }
 
     let branch_parents = branch_parents(&branches)?;
 
