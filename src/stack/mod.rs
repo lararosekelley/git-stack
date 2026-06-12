@@ -155,6 +155,12 @@ pub fn adopt_branch(branch: &str, parent: &str) -> Result<()> {
     if !branches.contains(parent) {
         bail!("parent branch {parent} does not exist");
     }
+    if branch_and_descendants(branch)?
+        .iter()
+        .any(|descendant| descendant == parent)
+    {
+        bail!("{parent} is already below {branch} in the stack; that would form a cycle");
+    }
 
     set_parent(branch, parent)?;
     record_base(branch, parent);
@@ -273,7 +279,8 @@ pub fn branch_and_descendants(branch: &str) -> Result<Vec<String>> {
     let parents = parent_map()?;
     let children = children_map(&parents);
     let mut branches = vec![branch.to_owned()];
-    collect_descendants(branch, &children, &mut branches);
+    let mut visited = BTreeSet::from([branch.to_owned()]);
+    collect_descendants(branch, &children, &mut branches, &mut visited);
     Ok(branches)
 }
 
@@ -340,11 +347,15 @@ fn collect_descendants(
     branch: &str,
     children: &BTreeMap<String, Vec<String>>,
     branches: &mut Vec<String>,
+    visited: &mut BTreeSet<String>,
 ) {
     if let Some(branch_children) = children.get(branch) {
         for child in branch_children {
+            if !visited.insert(child.to_owned()) {
+                continue; // cyclic metadata; mirror the guard in path_from_root/root_for
+            }
             branches.push(child.to_owned());
-            collect_descendants(child, children, branches);
+            collect_descendants(child, children, branches, visited);
         }
     }
 }
