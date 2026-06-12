@@ -632,3 +632,33 @@ fn rebuild_overview_keeps_merged_history() {
     );
     assert!(body.contains("demo://review/2"));
 }
+
+#[test]
+fn list_shows_review_numbers_for_branches_with_reviews() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "add a");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "add b");
+
+    // No reviews yet: the tree carries no numbers.
+    repo.stack()
+        .args(["list"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("feature/a"))
+        .stdout(predicates::str::contains("(#1)").not());
+
+    repo.stack().args(["submit", "--stack"]).assert().success();
+
+    // Each branch now shows its open review number.
+    repo.stack()
+        .args(["list"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("feature/a (#1)"))
+        .stdout(predicates::str::contains("feature/b (#2)"))
+        // The trunk has no review.
+        .stdout(predicates::str::contains("main (trunk)"));
+}

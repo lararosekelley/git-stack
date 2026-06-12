@@ -36,6 +36,16 @@ pub(super) fn first_json_item(output: &str) -> Result<Option<Value>> {
     }
 }
 
+/// Every item in a JSON array (or the single object as a one-element list).
+pub(super) fn json_items(output: &str) -> Result<Vec<Value>> {
+    let value: Value = serde_json::from_str(output).context("failed to parse provider JSON")?;
+    match value {
+        Value::Array(items) => Ok(items),
+        Value::Object(_) => Ok(vec![value]),
+        _ => bail!("provider JSON must be an object or array"),
+    }
+}
+
 pub(super) fn required_string(value: &Value, keys: &[&str]) -> Result<String> {
     for key in keys {
         if let Some(field) = value.get(*key) {

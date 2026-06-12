@@ -149,7 +149,7 @@ pub fn checkout_bottom() -> Result<()> {
     git::checkout(&bottom)
 }
 
-pub fn print_stack() -> Result<()> {
+pub fn print_stack(reviews: &BTreeMap<String, String>) -> Result<()> {
     let current = git::current_branch()?;
     let parents = parent_map()?;
     let root = root_for(&current, &parents);
@@ -162,6 +162,7 @@ pub fn print_stack() -> Result<()> {
         &current,
         trunk.as_deref(),
         &children,
+        reviews,
         0,
         &mut BTreeSet::new(),
         &mut lines,
@@ -186,7 +187,7 @@ pub fn print_stack() -> Result<()> {
 /// Print every stack, not just the current one: the trunk-rooted forest with
 /// a single trunk line at the bottom, and each rootless fragment as its own
 /// tree above it. The branch you are on is marked wherever it appears.
-pub fn print_all_stacks() -> Result<()> {
+pub fn print_all_stacks(reviews: &BTreeMap<String, String>) -> Result<()> {
     let current = git::current_branch()?;
     let parents = parent_map()?;
     let children = children_map(&parents);
@@ -227,6 +228,7 @@ pub fn print_all_stacks() -> Result<()> {
             &current,
             trunk.as_deref(),
             &children,
+            reviews,
             0,
             &mut BTreeSet::new(),
             &mut lines,
@@ -263,6 +265,7 @@ fn collect_tree_lines(
     current: &str,
     trunk: Option<&str>,
     children: &BTreeMap<String, Vec<String>>,
+    reviews: &BTreeMap<String, String>,
     depth: usize,
     seen: &mut BTreeSet<String>,
     lines: &mut Vec<String>,
@@ -278,6 +281,10 @@ fn collect_tree_lines(
     if Some(branch) == trunk {
         line.push_str(&style::paint(style::DIM, " (trunk)"));
     }
+    // The branch's open review number, when one is known.
+    if let Some(id) = reviews.get(branch) {
+        line.push_str(&style::paint(style::DIM, &format!(" ({id})")));
+    }
     lines.push(line);
 
     if !seen.insert(branch.to_owned()) {
@@ -287,7 +294,16 @@ fn collect_tree_lines(
 
     if let Some(branch_children) = children.get(branch) {
         for child in branch_children {
-            collect_tree_lines(child, current, trunk, children, depth + 1, seen, lines);
+            collect_tree_lines(
+                child,
+                current,
+                trunk,
+                children,
+                reviews,
+                depth + 1,
+                seen,
+                lines,
+            );
         }
     }
 }

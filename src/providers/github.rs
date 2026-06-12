@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 
 use super::json::{
-    first_json_item, optional_bool, optional_string, parse_body_field, parse_state, required_string,
+    first_json_item, json_items, optional_bool, optional_string, parse_body_field, parse_state,
+    required_string,
 };
 use super::{ReviewProvider, ReviewRequest, command_output, merge_with_retry};
 
@@ -107,6 +108,23 @@ impl ReviewProvider for GitHubProvider {
         }
     }
 
+    fn open_reviews(&self) -> Result<Vec<ReviewRequest>> {
+        let output = command_output(
+            "gh",
+            &[
+                "pr",
+                "list",
+                "--state",
+                "open",
+                "--limit",
+                "200",
+                "--json",
+                "number,state,baseRefName,headRefName,url,title,isDraft",
+            ],
+        )?;
+        parse_github_reviews(&output)
+    }
+
     fn mark_ready(&self, review: &ReviewRequest) -> Result<String> {
         command_output("gh", &["pr", "ready", review.id_value()])
     }
@@ -195,19 +213,26 @@ fn list_review(branch: &str, state: Option<&str>) -> Result<Option<ReviewRequest
 }
 
 fn parse_github_review(output: &str) -> Result<Option<ReviewRequest>> {
-    let Some(review) = first_json_item(output)? else {
-        return Ok(None);
-    };
+    first_json_item(output)?
+        .as_ref()
+        .map(github_review_from)
+        .transpose()
+}
 
-    Ok(Some(ReviewRequest {
-        id: format!("#{}", required_string(&review, &["number"])?),
-        branch: required_string(&review, &["headRefName"])?,
-        base: required_string(&review, &["baseRefName"])?,
-        state: parse_state(&required_string(&review, &["state"])?),
-        url: required_string(&review, &["url"])?,
-        title: optional_string(&review, "title"),
-        draft: optional_bool(&review, "isDraft"),
-    }))
+fn parse_github_reviews(output: &str) -> Result<Vec<ReviewRequest>> {
+    json_items(output)?.iter().map(github_review_from).collect()
+}
+
+fn github_review_from(review: &serde_json::Value) -> Result<ReviewRequest> {
+    Ok(ReviewRequest {
+        id: format!("#{}", required_string(review, &["number"])?),
+        branch: required_string(review, &["headRefName"])?,
+        base: required_string(review, &["baseRefName"])?,
+        state: parse_state(&required_string(review, &["state"])?),
+        url: required_string(review, &["url"])?,
+        title: optional_string(review, "title"),
+        draft: optional_bool(review, "isDraft"),
+    })
 }
 
 #[cfg(test)]
@@ -280,6 +305,21 @@ mod tests {
     #[test]
     fn parse_review_empty_array_returns_none() {
         assert_eq!(parse_github_review("[]").expect("parse review"), None);
+    }
+
+    #[test]
+    fn parse_github_reviews_reads_every_item() {
+        let reviews = parse_github_reviews(
+            r#"[{"number":1,"state":"OPEN","baseRefName":"main","headRefName":"feature/a","url":"https://github.com/owner/repo/pull/1"},
+                {"number":2,"state":"OPEN","baseRefName":"feature/a","headRefName":"feature/b","url":"https://github.com/owner/repo/pull/2"}]"#,
+        )
+        .expect("parse reviews");
+
+        assert_eq!(reviews.len(), 2);
+        assert_eq!(reviews[0].id, "#1");
+        assert_eq!(reviews[0].branch, "feature/a");
+        assert_eq!(reviews[1].id, "#2");
+        assert_eq!(reviews[1].branch, "feature/b");
     }
 
     #[test]
