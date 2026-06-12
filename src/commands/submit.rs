@@ -180,17 +180,24 @@ pub fn submit(
     }
 
     // A renamed branch's fresh review now exists, so retire the review the old
-    // name still heads. Markers stay set until the ledger below prunes the
-    // superseded entries; then they are cleared.
-    let renamed: Vec<(String, String)> = branch_parents
-        .iter()
-        .filter_map(|(branch, _)| {
-            stack::renamed_from(branch)
-                .ok()
-                .flatten()
-                .map(|old| (branch.clone(), old))
-        })
-        .collect();
+    // name still heads. Only handle this when the ledger prune below actually
+    // runs (stack-wide submit): the marker is the sole signal that identifies
+    // the stale row across every other overview, so closing and clearing it in
+    // a single-branch submit - which never prunes - would orphan those rows
+    // permanently. Left set, the marker waits for a later `submit --stack`.
+    let renamed: Vec<(String, String)> = if submit_stack || downstack {
+        branch_parents
+            .iter()
+            .filter_map(|(branch, _)| {
+                stack::renamed_from(branch)
+                    .ok()
+                    .flatten()
+                    .map(|old| (branch.clone(), old))
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
     for (_, old) in &renamed {
         close_superseded_review(review_provider.as_ref(), old, dry_run)?;
     }
