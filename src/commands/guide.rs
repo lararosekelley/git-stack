@@ -478,25 +478,39 @@ impl<'a> Tour<'a> {
         self.term.clear_screen().ok();
 
         let mut scroll = 0usize;
+        let mut read_errors = 0u32;
         let flow = loop {
             let (rows, cols) = self.term.size();
             let (rows, cols) = (rows as usize, cols as usize);
             let body = rows.saturating_sub(2).max(1);
             let max_scroll = self.lines.len().saturating_sub(body);
             scroll = scroll.min(max_scroll);
-            self.draw(scroll, cols, body, hint)?;
+            self.draw(scroll, cols, body, hint);
 
             match self.term.read_key() {
-                Ok(Key::ArrowDown | Key::Char('j')) => scroll = (scroll + 1).min(max_scroll),
-                Ok(Key::ArrowUp | Key::Char('k')) => scroll = scroll.saturating_sub(1),
-                Ok(Key::PageDown | Key::Char(' ')) => scroll = (scroll + body).min(max_scroll),
-                Ok(Key::PageUp) => scroll = scroll.saturating_sub(body),
-                Ok(Key::Home | Key::Char('g')) => scroll = 0,
-                Ok(Key::End | Key::Char('G')) => scroll = max_scroll,
-                Ok(Key::Enter) => break Flow::Continue,
-                Ok(Key::Char('q') | Key::Escape | Key::CtrlC) => break Flow::Stop,
-                Ok(_) => {}
-                Err(_) => break Flow::Stop,
+                Ok(key) => {
+                    read_errors = 0;
+                    match key {
+                        Key::ArrowDown | Key::Char('j') => scroll = (scroll + 1).min(max_scroll),
+                        Key::ArrowUp | Key::Char('k') => scroll = scroll.saturating_sub(1),
+                        Key::PageDown | Key::Char(' ') => scroll = (scroll + body).min(max_scroll),
+                        Key::PageUp => scroll = scroll.saturating_sub(body),
+                        Key::Home | Key::Char('g') => scroll = 0,
+                        Key::End | Key::Char('G') => scroll = max_scroll,
+                        Key::Enter => break Flow::Continue,
+                        Key::Char('q') | Key::Escape | Key::CtrlC => break Flow::Stop,
+                        _ => {}
+                    }
+                }
+                // A transient read error (e.g. a resize interrupting the read)
+                // should redraw and retry, not end the tour - but bail if they
+                // keep coming so a vanished terminal can't spin forever.
+                Err(_) => {
+                    read_errors += 1;
+                    if read_errors >= 3 {
+                        break Flow::Stop;
+                    }
+                }
             }
         };
 
@@ -508,7 +522,7 @@ impl<'a> Tour<'a> {
     /// Compose and paint one frame: header bar, `body` rows of content from
     /// `scroll`, and a footer bar. Every row is exactly `cols` wide so each
     /// frame fully overwrites the last.
-    fn draw(&self, scroll: usize, cols: usize, body: usize, hint: &str) -> Result<()> {
+    fn draw(&self, scroll: usize, cols: usize, body: usize, hint: &str) {
         let bar = Style::new().invert();
         let header = format!("{} - {}", self.topic, self.title);
         let mut frame = style::paint(bar, &fit(&format!(" {header}"), cols));
@@ -532,12 +546,11 @@ impl<'a> Tour<'a> {
         frame.push('\n');
         frame.push_str(&style::paint(bar, &fit(&footer, cols)));
 
-        self.term.move_cursor_to(0, 0)?;
+        // Best effort: a failed frame must not abort the loop, or the cursor
+        // restore at the end of `present` would be skipped.
+        self.term.move_cursor_to(0, 0).ok();
         print!("{frame}");
-        std::io::stdout()
-            .flush()
-            .context("failed to draw the guide")?;
-        Ok(())
+        let _ = std::io::stdout().flush();
     }
 }
 
