@@ -158,3 +158,38 @@ fn repair_reports_unrepairable_branches() {
             "0 repaired, 0 verified, 1 unresolved",
         ));
 }
+
+#[test]
+fn repair_from_remote_rebuilds_a_stack_from_the_pushed_metadata() {
+    let repo = TestRepo::new();
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "add a");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "add b");
+
+    // Pushing the branches publishes the shared metadata ref alongside them.
+    let _origin = repo.add_bare_origin(&["main"]);
+    repo.stack().args(["restack", "--push"]).assert().success();
+
+    // A fresh clone would have no local stack metadata; simulate that.
+    repo.git(["config", "--unset", "branch.feature/a.stkParent"]);
+    repo.git(["config", "--unset", "branch.feature/b.stkParent"]);
+
+    // Rebuild it purely from the metadata ref on the remote.
+    repo.stack()
+        .args(["repair", "--from-remote"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("attached feature/a to main"))
+        .stdout(predicates::str::contains("attached feature/b to feature/a"))
+        .stdout(predicates::str::contains("rebuilt 2 branches"));
+
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/a.stkParent"]),
+        "main"
+    );
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b.stkParent"]),
+        "feature/a"
+    );
+}

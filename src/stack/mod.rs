@@ -5,10 +5,16 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use anyhow::{Context, Result, bail};
+use serde_json::{Value, json};
 
 use crate::git;
 use crate::settings;
 use crate::style;
+
+/// Shared ref carrying the stack's parent map, so another clone can rebuild
+/// the metadata. Pushed/fetched explicitly; a normal fetch ignores it.
+const METADATA_REF: &str = "refs/stk/metadata";
+const METADATA_FILE: &str = "stack.json";
 
 mod nav;
 mod restack;
@@ -306,6 +312,84 @@ pub fn stack_line(branch: &str) -> Result<Vec<String>> {
     // (you are standing on it); a trunk is never part of a stack.
     line.retain(|candidate| Some(candidate) != trunk.as_ref());
     Ok(line)
+}
+
+/// Publish the current stack's parent map to the shared metadata ref so
+/// another clone can rebuild it. Best effort: a failure warns but never aborts
+/// the push that triggered it.
+pub fn publish_metadata(remote: &str) {
+    if let Err(error) = try_publish_metadata(remote) {
+        anstream::eprintln!(
+            "{}",
+            style::warn(&format!("could not publish stack metadata: {error:#}"))
+        );
+    }
+}
+
+fn try_publish_metadata(remote: &str) -> Result<()> {
+    let current = git::current_branch()?;
+    let root = stack_root(&current)?;
+    let trunk = trunk_branch(&git::local_branches()?);
+
+    let mut parents = serde_json::Map::new();
+    for branch in branch_and_descendants(&root)? {
+        if Some(&branch) == trunk.as_ref() {
+            continue;
+        }
+        if let Some(parent) = parent_of(&branch)? {
+            parents.insert(branch, Value::String(parent));
+        }
+    }
+    if parents.is_empty() {
+        return Ok(());
+    }
+
+    let document = json!({ "trunk": trunk, "parents": parents });
+    git::write_blob_ref(METADATA_REF, METADATA_FILE, &document.to_string())?;
+    git::push_ref(remote, METADATA_REF)
+}
+
+/// Rebuild local stack metadata from the shared ref, fetching any listed
+/// branch that is not present locally. Returns how many branches it attached.
+pub fn apply_remote_metadata(remote: &str) -> Result<usize> {
+    git::fetch_ref(remote, METADATA_REF)
+        .context("no stack metadata on the remote - push it from the other machine first")?;
+    let Some(content) = git::read_ref_file(METADATA_REF, METADATA_FILE)? else {
+        bail!("the remote stack metadata is empty");
+    };
+
+    let document: Value =
+        serde_json::from_str(&content).context("failed to parse remote stack metadata")?;
+    let parents = document
+        .get("parents")
+        .and_then(Value::as_object)
+        .context("remote stack metadata is malformed")?;
+
+    // Fetch every listed branch first, so each parent resolves locally before
+    // we record it.
+    let local: BTreeSet<String> = git::local_branches()?.into_iter().collect();
+    for branch in parents.keys() {
+        if !local.contains(branch) {
+            git::fetch_branch(remote, branch)
+                .with_context(|| format!("failed to fetch {branch} from {remote}"))?;
+        }
+    }
+
+    let mut attached = 0;
+    for (branch, parent) in parents {
+        let Some(parent) = parent.as_str() else {
+            continue;
+        };
+        set_parent(branch, parent)?;
+        record_base(branch, parent);
+        attached += 1;
+        anstream::println!(
+            "attached {} to {}",
+            style::branch(branch),
+            style::branch(parent)
+        );
+    }
+    Ok(attached)
 }
 
 /// The stack path from the bottom up to (and including) `branch`,

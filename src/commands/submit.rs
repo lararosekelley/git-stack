@@ -153,6 +153,9 @@ pub fn submit(
         } else {
             git::push_set_upstream_force_with_lease(&remote, &branches)?;
             anstream::println!("pushed {} to {remote}", style::branch(&branches.join(" ")));
+            // Carry the stack's parent map along so another clone can rebuild
+            // it with `git stk repair --from-remote`.
+            stack::publish_metadata(&remote);
         }
     }
 
