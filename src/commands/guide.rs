@@ -338,7 +338,8 @@ fn adopt(tour: &mut Tour) -> Result<()> {
 
 fn undo(tour: &mut Tour) -> Result<()> {
     tour.banner("1/2 - rewrite the stack");
-    tour.say("Stack-rewriting commands - restack, sync, merge, cleanup, rename -");
+    tour.say("Stack-rewriting commands - restack, sync, merge, cleanup, rename, absorb,");
+    tour.say("new --insert, and new --prepend -");
     tour.say("snapshot the stack before they touch it. Start with two branches:");
     tour.stk(&["new", "feature/api"])?;
     tour.commit("api.txt", "endpoints\n", "add api")?;
