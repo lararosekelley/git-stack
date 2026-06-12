@@ -74,6 +74,7 @@ fn main() -> ExitCode {
         Command::Setup(command) => command.run(),
         Command::Upgrade(command) => command.run(),
         Command::Cleanup(command) => command.run(),
+        Command::Credits(command) => command.run(),
     };
 
     match result {
@@ -127,6 +128,7 @@ fn lock_name(command: &Command) -> Option<&'static str> {
         | Command::Completions(_)
         | Command::Guide(_)
         | Command::Setup(_)
-        | Command::Upgrade(_) => None,
+        | Command::Upgrade(_)
+        | Command::Credits(_) => None,
     }
 }

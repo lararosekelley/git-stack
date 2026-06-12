@@ -47,6 +47,7 @@ pub enum Command {
     Setup(commands::setup::Setup),
     Upgrade(commands::upgrade::Upgrade),
     Cleanup(commands::cleanup::Cleanup),
+    Credits(commands::credits::Credits),
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
