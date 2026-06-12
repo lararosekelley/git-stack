@@ -33,6 +33,34 @@ dist-plan:
 bump part:
     cargo run --features dev-tools --bin git-stk-bump -- {{part}}
 
+# Cut a release (main only): bump the version, commit, tag, and push --follow-tags.
+# part is major|minor|patch. Refuses to run off main or with a dirty tree.
+release part:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    branch="$(git rev-parse --abbrev-ref HEAD)"
+    if [ "$branch" != "main" ]; then
+        echo "release: must be on 'main' (currently on '$branch')" >&2
+        exit 1
+    fi
+    if [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+        echo "release: tracked changes are uncommitted; commit or stash first" >&2
+        exit 1
+    fi
+    cargo run --features dev-tools --bin git-stk-bump -- {{part}}
+    # Read the freshly-bumped version from the [package] table only.
+    version="$(awk -F'"' '/^\[/{p=($0=="[package]")} p && /^[[:space:]]*version[[:space:]]*=/{print $2; exit}' Cargo.toml)"
+    if [ -z "$version" ]; then
+        echo "release: could not read new version from Cargo.toml" >&2
+        exit 1
+    fi
+    git add Cargo.toml Cargo.lock
+    git commit -m "chore(release): bump to ${version}"
+    # Annotated tag: --follow-tags only pushes annotated tags.
+    git tag -a "v${version}" -m "v${version}"
+    git push --follow-tags
+    echo "released v${version}"
+
 # Generate shell completions and man pages
 generate-assets:
     cargo run --features generate --bin git-stk-generate -- all target/generated
