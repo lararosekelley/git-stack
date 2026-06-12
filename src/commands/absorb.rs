@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use anyhow::{Result, bail};
 use clap::ArgAction;
 
+use crate::cli::{PushMode, UpdateRefsMode};
 use crate::commands::Run;
 use crate::{git, settings, stack, style};
 
@@ -54,17 +55,16 @@ impl Run for Absorb {
 /// Atomic: if the rewrite hits a conflict it is aborted and rolled back so
 /// the working tree is left exactly as it was.
 fn apply(current: &str, routes: Vec<Route>) -> Result<()> {
-    // The rewrite leans on `rebase --update-refs` to carry every affected
-    // branch ref, so it must cover the whole line: run from a leaf, with no
-    // branch forking off the path below it.
     let path = stack::path_from_root(current)?;
+
+    // Branches that fork off the path keep their old parents until they are
+    // restacked after the fold. Note them now to decide whether that second
+    // pass is needed.
+    let mut forked = false;
     for branch in &path {
         for child in stack::children_for_branch(branch)? {
             if !path.contains(&child) {
-                bail!(
-                    "{branch} has a branch above it ({child}); run `git stk absorb` \
-                     from the top of a single line of the stack"
-                );
+                forked = true;
             }
         }
     }
@@ -81,8 +81,9 @@ fn apply(current: &str, routes: Vec<Route>) -> Result<()> {
     stack::snapshot("absorb");
     let orig_head = git::rev_parse("HEAD")?;
 
-    // Move every change to the worktree, then restage and commit each
-    // target's hunks as a fixup! of its commit.
+    // Phase 1: commit each target's hunks as a fixup! of its commit, then an
+    // autosquash rebase folds them in. `--update-refs` carries the path's
+    // branch refs. Atomic: a conflict here rolls back, nothing changed.
     git::reset_index()?;
     for (sha, hunks) in &targets {
         let staged = git::apply_cached(&build_patch(hunks)).and_then(|()| git::commit_fixup(sha));
@@ -125,7 +126,18 @@ fn apply(current: &str, routes: Vec<Route>) -> Result<()> {
         }
     }
 
-    report_applied(&targets, &routes, &path)
+    report_absorbed(&targets, &routes);
+
+    // Phase 2: the fold rewrote the path's commits, so any branch forking off
+    // it still points at the old ones. Restack settles those onto the
+    // rewritten parents (and prints the push hint for the whole stack). A
+    // conflict here is resumable - `git stk continue`/`abort`, and `git stk
+    // undo` reverts the whole absorb.
+    if forked {
+        stack::restack(UpdateRefsMode::Enabled, PushMode::Disabled, false)
+    } else {
+        report_push_hint(&path)
+    }
 }
 
 /// The commit each target absorbs into, with the hunks bound for it, oldest
@@ -392,11 +404,7 @@ fn print_plan(routes: &[Route]) {
     print_skips(routes);
 }
 
-fn report_applied(
-    targets: &[(String, Vec<&Route>)],
-    routes: &[Route],
-    path: &[String],
-) -> Result<()> {
+fn report_absorbed(targets: &[(String, Vec<&Route>)], routes: &[Route]) {
     let hunks: usize = targets.iter().map(|(_, hunks)| hunks.len()).sum();
     anstream::println!(
         "{}",
@@ -409,14 +417,18 @@ fn report_applied(
     );
     print_absorb_lines(routes);
     print_skips(routes);
+}
 
+/// The push hint for a single line of rewritten branches. (When the stack
+/// forks, the phase-2 restack prints its own hint covering every branch.)
+fn report_push_hint(branches: &[String]) -> Result<()> {
     let remote = settings::remote()?;
     anstream::println!("remote branches may be stale; push them with:");
     anstream::println!(
         "{}",
         style::dim(&format!(
             "  git push --force-with-lease {remote} {}",
-            path.join(" ")
+            branches.join(" ")
         ))
     );
     Ok(())

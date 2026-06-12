@@ -185,9 +185,9 @@ fn absorb_leaves_unattributable_changes_in_place() {
 }
 
 #[test]
-fn absorb_requires_running_from_a_leaf() {
-    let repo = stack();
-    repo.git(["switch", "feature/a"]); // feature/b sits above it
+fn absorb_folds_then_restacks_a_branch_forking_above() {
+    let repo = stack(); // main <- feature/a (foo) <- feature/b (bar)
+    repo.git(["switch", "feature/a"]); // feature/b forks above the current branch
 
     repo.write("foo.txt", "alpha fixed\n");
     repo.git(["add", "foo.txt"]);
@@ -195,7 +195,53 @@ fn absorb_requires_running_from_a_leaf() {
     repo.stack()
         .args(["absorb"])
         .assert()
+        .success()
+        .stdout(predicates::str::contains("absorbed 1 hunk into 1 commit"))
+        // Phase 2 restacks the forked branch onto the rewritten feature/a.
+        .stdout(predicates::str::contains("rebasing feature/b"));
+
+    // The fix folded into feature/a's existing commit, not a new one.
+    assert_eq!(repo.git(["show", "feature/a:foo.txt"]), "alpha fixed");
+    assert_eq!(repo.git(["rev-list", "--count", "main..feature/a"]), "1");
+    // feature/b kept its own work and now sits on the rewritten feature/a.
+    assert_eq!(repo.git(["show", "feature/b:bar.txt"]), "beta");
+    assert_eq!(repo.git(["show", "feature/b:foo.txt"]), "alpha fixed");
+    assert!(
+        repo.git_status(["merge-base", "--is-ancestor", "feature/a", "feature/b"])
+            .status
+            .success(),
+        "feature/b should still be stacked on feature/a"
+    );
+    assert!(repo.git(["status", "--porcelain"]).is_empty());
+}
+
+#[test]
+fn absorb_fork_conflict_is_resumable() {
+    // feature/b changes the same line feature/a owns, so restacking it onto
+    // the absorbed feature/a conflicts.
+    let repo = TestRepo::new();
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("foo.txt", "alpha\n", "add foo");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("foo.txt", "alpha beta\n", "rework foo on b");
+
+    repo.git(["switch", "feature/a"]);
+    repo.write("foo.txt", "alpha fixed\n");
+    repo.git(["add", "foo.txt"]);
+
+    // The fold lands; the forked branch's restack then conflicts and stops in
+    // the standard resumable state rather than rolling the fold back.
+    repo.stack()
+        .args(["absorb"])
+        .assert()
         .failure()
-        .stderr(predicates::str::contains("run `git stk absorb`"))
-        .stderr(predicates::str::contains("feature/b"));
+        .stdout(predicates::str::contains("absorbed 1 hunk into 1 commit"))
+        .stderr(predicates::str::contains(
+            "conflict while rebasing feature/b",
+        ))
+        .stderr(predicates::str::contains("git stk continue"));
+
+    // The fold is applied (not rolled back), and a restack is in progress.
+    assert_eq!(repo.git(["show", "feature/a:foo.txt"]), "alpha fixed");
+    repo.stack().args(["abort"]).assert().success();
 }

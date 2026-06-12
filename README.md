@@ -191,8 +191,10 @@ lines it touches: stage the fixes (`git add`), then `git stk absorb` blames each
 owning commit via a fixup + autosquash rebase, and carries every branch ref along. `--dry-run` prints the
 hunk -> commit routing first; `--include-unstaged` (or `stk.absorbIncludeUnstaged`) also takes unstaged
 tracked edits. Hunks it cannot attribute - new lines, trunk-owned lines, lines spanning commits - are left
-in place and reported. Run it from the top of a single line of the stack; it is atomic, rolling back
-untouched if the rewrite hits a conflict.
+in place and reported. Folding the fixes in is atomic - a conflict there rolls back untouched. Branches
+that fork off below you are then restacked onto the rewritten commits; if one of those hits a conflict it
+stops in the usual resumable state (`git stk continue`/`abort`, or `git stk undo` to reverse the whole
+absorb).
 
 `undo` reverses the last stack-rewriting command - `restack`, `sync`, `merge`, `cleanup`, or `rename` -
 restoring local branch tips and stack metadata (it even recreates a branch `cleanup` deleted). It is local
