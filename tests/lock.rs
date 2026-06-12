@@ -24,6 +24,30 @@ fn mutating_command_refuses_while_locked() {
 }
 
 #[test]
+fn linked_worktrees_share_one_lock() {
+    let repo = TestRepo::new();
+
+    // A linked worktree of the same repo: it shares the common git dir, and so
+    // the same `branch.*` stack metadata the lock guards.
+    repo.git(["branch", "wt-branch"]);
+    let worktree = repo.path().join("linked-wt");
+    repo.git(["worktree", "add", worktree.to_str().unwrap(), "wt-branch"]);
+
+    // The main worktree holds the lock (written under the shared common dir).
+    hold_lock(&repo);
+
+    // A mutating command from the linked worktree must see that one lock and
+    // refuse - a per-worktree lock would let it clobber the shared metadata.
+    repo.stack_in(&worktree)
+        .args(["new", "feature/x"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "another git stk operation is in progress",
+        ));
+}
+
+#[test]
 fn read_only_command_ignores_the_lock() {
     let repo = TestRepo::new();
     hold_lock(&repo);
