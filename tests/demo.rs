@@ -442,6 +442,71 @@ fn rename_then_submit_replaces_and_prunes_the_old_review() {
     );
 }
 
+/// A single-branch submit cannot prune the superseded row from the other
+/// reviews' overviews, so it must leave the rename marker set rather than close
+/// the old review and orphan that row forever. A later `submit --stack` then
+/// resolves it cleanly.
+#[test]
+fn single_branch_submit_defers_rename_supersession_to_stack_submit() {
+    let repo = TestRepo::new();
+    repo.git(["config", "stk.provider", "demo"]);
+
+    repo.stack().args(["new", "feature/a"]).assert().success();
+    repo.commit_file("a.txt", "a\n", "add a");
+    repo.stack().args(["new", "feature/b"]).assert().success();
+    repo.commit_file("b.txt", "b\n", "add b");
+    repo.stack().args(["submit", "--stack"]).assert().success();
+
+    // Rename the leaf; its open review (#2) still heads the old name.
+    repo.stack()
+        .args(["rename", "feature/b2"])
+        .assert()
+        .success();
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b2.stkRenamedFrom"]),
+        "feature/b"
+    );
+
+    // Single-branch submit: opens #3 for the new name but must NOT close #2 or
+    // clear the marker, since it never prunes feature/a's overview.
+    repo.stack()
+        .args(["submit", "feature/b2"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains("created feature/b2 -> feature/a"))
+        .stdout(predicates::str::contains("superseded").not());
+
+    // Marker survives for a later stack submit to consume.
+    assert_eq!(
+        repo.git(["config", "--get", "branch.feature/b2.stkRenamedFrom"]),
+        "feature/b"
+    );
+
+    // Now the stack submit closes #2 and prunes it from feature/a's overview.
+    repo.stack()
+        .args(["submit", "--stack"])
+        .assert()
+        .success()
+        .stdout(predicates::str::contains(
+            "closed superseded review #2 for feature/b",
+        ));
+    assert!(
+        repo.git_status(["config", "--get", "branch.feature/b2.stkRenamedFrom"])
+            .stdout
+            .is_empty()
+    );
+
+    let body_a = demo_review_body(&repo, 1);
+    assert!(
+        body_a.contains("demo://review/3"),
+        "overview should list the renamed branch's fresh review"
+    );
+    assert!(
+        !body_a.contains("demo://review/2"),
+        "overview should drop the superseded review once the stack submit prunes it"
+    );
+}
+
 /// The stored review body for demo review `id`, for asserting overview content.
 fn demo_review_body(repo: &TestRepo, id: u64) -> String {
     let raw = std::fs::read_to_string(repo.path().join(".git/stk-demo-reviews"))
